@@ -1,13 +1,19 @@
 extends Node
 
-# --- GAME STATE DATA ---
+# --- RUN STATE (persists across encounters) ---
+var player_hp: int = 30
+var max_hp: int = 30
+var encounter_number: int = 1
+var run_active: bool = false
+var master_deck: Array[String] = []
+
+# --- MATCH STATE (reset each encounter) ---
 var dial_value: int = 0
 var player_overheat: int = 0
 var dealer_traction: int = 0
 var dealer_bleed: int = 0
 var dealer_is_locked: bool = false
 var next_card_multiplier: float = 1.0
-
 var current_dealer_intent: Dictionary = {}
 var match_active: bool = false
 var pending_effects: Array[Dictionary] = []
@@ -16,12 +22,11 @@ var pending_effects: Array[Dictionary] = []
 var magic_enabled: bool = false
 var unlocked_magic_cards: Array[String] = []
 
-# --- DECK MANAGEMENT STATE ---
+# --- BATTLE DECK STATE ---
 var deck: Array[String] = []
 var hand: Array[String] = []
 var discard_pile: Array[String] = []
 
-# A standard starter deck list using your Database IDs
 const STARTING_DECK: Array[String] = [
 	"piston_jab", "piston_jab", "piston_jab", "piston_jab",
 	"grounding_cleats", "grounding_cleats", "grounding_cleats",
@@ -30,17 +35,29 @@ const STARTING_DECK: Array[String] = [
 	"overdrive"
 ]
 
-# --- SIGNALS FOR THE UI (main.gd) TO LISTEN TO ---
+# --- SIGNALS ---
 signal dial_changed(new_value)
 signal overheat_changed(new_value)
 signal status_changed(traction, bleed, is_locked)
 signal dealer_intent_telegraphed(intent_text)
 signal hand_drawn(fresh_cards: Array)
-signal game_over(winner)
+signal match_ended(winner: String, damage_taken: int)
 signal deck_counts_changed(deck_size: int, discard_size: int)
+signal hp_changed(current_hp: int, max_hp: int)
+signal encounter_started(encounter_num: int)
+signal reward_offered(card_choices: Array)
+signal run_over(final_encounter: int)
+
+func start_run() -> void:
+	player_hp = max_hp
+	encounter_number = 1
+	run_active = true
+	master_deck = STARTING_DECK.duplicate()
+	hp_changed.emit(player_hp, max_hp)
+	encounter_started.emit(encounter_number)
+	start_match()
 
 func start_match() -> void:
-	# 1. Reset all the basic stats to zero
 	dial_value = 0
 	player_overheat = 0
 	dealer_traction = 0
@@ -49,16 +66,19 @@ func start_match() -> void:
 	next_card_multiplier = 1.0
 	match_active = true
 	pending_effects.clear()
-	
-	# 2. Tell the UI to update its basic displays
+
 	dial_changed.emit(dial_value)
 	overheat_changed.emit(player_overheat)
 	status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
-	
-	# 3. Initialize deck state and draw opening hand
-	initialize_deck()            
-	prepare_next_dealer_intent() 
-	draw_hand(3)                 
+
+	deck = master_deck.duplicate()
+	hand.clear()
+	discard_pile.clear()
+	deck.shuffle()
+	print("Encounter ", encounter_number, " — Deck: ", deck.size(), " cards. Difficulty: x", get_difficulty_modifier())
+
+	prepare_next_dealer_intent()
+	draw_hand(3)
 
 func play_card(card_id: String) -> void:
 	if not match_active:
@@ -66,43 +86,40 @@ func play_card(card_id: String) -> void:
 	if not CardDatabase.CARDS.has(card_id):
 		push_error("Card ID not found in database: " + card_id)
 		return
-		
+
 	var card = CardDatabase.CARDS[card_id]
 	print("\n--- PLAYER PLAYED: ", card.name, " ---")
-	
-	# 1. Roll Base Value + Variance
+
 	var roll: int = card.base_val
 	if card.variance > 0:
 		roll += randi_range(-card.variance, card.variance)
-		
-	# 2. Process Multiplier Logic
+
 	var resolved_value = int(roll * next_card_multiplier)
 	if next_card_multiplier != 1.0:
 		print("Multiplier Applied! Value scaled to: ", resolved_value)
-		next_card_multiplier = 1.0 # Reset immediately
-	
-	# 3. Match Actions
+		next_card_multiplier = 1.0
+
 	match card.action:
 		"PUSH":
 			move_dial(resolved_value)
-			
+
 		"RESIST":
-			if card.has("stacks"): # Governor Lock mechanic
+			if card.has("stacks"):
 				dealer_is_locked = true
 				print("Governor Lock engaged! Dealer's next turn bypassed.")
 			else:
 				dealer_traction += resolved_value
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
-			
+
 		"MULTIPLIER":
 			next_card_multiplier = card.get("multiplier", 1.0)
 			print("Gear charging. Next card multiplier: ", next_card_multiplier)
-			
+
 		"VENT":
 			player_overheat = max(0, player_overheat - card.get("drain_val", 0))
 			overheat_changed.emit(player_overheat)
 			move_dial(resolved_value)
-			
+
 		"CONDITIONAL_PUSH":
 			var target_mod = card.get("target_mod", 1)
 			if dial_value != 0 and dial_value % target_mod == 0:
@@ -111,7 +128,7 @@ func play_card(card_id: String) -> void:
 				move_dial(resolved_value + bonus)
 			else:
 				move_dial(resolved_value)
-				
+
 		"PRECISION_STRIKE":
 			move_dial(resolved_value)
 			var target_mod = card.get("target_mod", 1)
@@ -119,7 +136,7 @@ func play_card(card_id: String) -> void:
 				var bonus = card.get("bonus_val", 0)
 				print("Precision Placement! Bonus +", bonus)
 				move_dial(bonus)
-				
+
 		"DELAY_PUSH":
 			var delay = card.get("delay_turns", 1)
 			pending_effects.append({
@@ -136,10 +153,8 @@ func play_card(card_id: String) -> void:
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
 			print("Mechanism corroded. Total Bleed stacks on Dealer: ", dealer_bleed)
 
-	# 4. Remove card from active hand array
 	discard_card_from_hand(card_id)
 
-	# 5. Apply Cost Effects
 	if card.has("cost"):
 		var cost_data = card.cost
 		if cost_data.type == "OVERHEAT":
@@ -147,14 +162,12 @@ func play_card(card_id: String) -> void:
 			overheat_changed.emit(player_overheat)
 			print("System generating heat. Overheat stacks: ", player_overheat)
 
-	# 6. Immediate Post-Card Win Check
 	if check_win_condition(): return
-	
-	# 7. Turn Lifecycle Decision
+
 	if card.get("free_action", false):
 		print("Free Action card. Remaining in Player phase.")
 		return
-		
+
 	end_player_turn()
 
 func move_dial(amount: int) -> void:
@@ -163,57 +176,56 @@ func move_dial(amount: int) -> void:
 	print("Dial Adjusted: ", dial_value)
 
 func end_player_turn() -> void:
-	# Process player Overheat penalties
 	if player_overheat > 0:
 		var slip_amount = player_overheat * 2
 		print("Overheat Backlash! Dial slips back by: -", slip_amount)
 		move_dial(-slip_amount)
-		
+
 	if check_win_condition(): return
-	
+
 	pass_turn_to_dealer()
 
 func pass_turn_to_dealer() -> void:
 	print("--- ENTERING DEALER PHASE ---")
-	
+
 	if dealer_is_locked:
 		print("Dealer is frozen by structural lock! Skipping phase.")
 		dealer_is_locked = false
 		status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
 		start_new_round()
 		return
-		
-	# Process Dramatic Delay
+
 	await get_tree().create_timer(0.8).timeout
-	
+
 	execute_dealer_move()
 
 func execute_dealer_move() -> void:
 	var move = current_dealer_intent
+	var difficulty = get_difficulty_modifier()
 	var base_roll = move.base_val
 	if move.variance > 0:
 		base_roll += randi_range(-move.variance, move.variance)
-		
-	if move.type == DealerAI.MoveType.PULL or move.type == DealerAI.MoveType.HEAVY_PULL:
-		# Calculate Defensive Mitigation
-		var mitigation = dealer_traction + dealer_bleed
-		var final_pull = max(0, base_roll - mitigation)
-		print("Dealer pulls for ", base_roll, " (Mitigated by ", mitigation, ") = Actual Pull: -", final_pull)
-		move_dial(-final_pull)
-		
-	elif move.type == DealerAI.MoveType.SABOTAGE:
-		player_overheat += 2
-		overheat_changed.emit(player_overheat)
-		print("Dealer sabotaged player mechanics! +2 Overheat.")
 
-	# End of Round Cleanup & Status Decay
+	if move.type == DealerAI.MoveType.PULL or move.type == DealerAI.MoveType.HEAVY_PULL:
+		var scaled_roll = int(base_roll * difficulty)
+		var mitigation = dealer_traction + dealer_bleed
+		var final_pull = max(0, scaled_roll - mitigation)
+		print("Dealer pulls for ", scaled_roll, " (Mitigated by ", mitigation, ") = Actual Pull: -", final_pull)
+		move_dial(-final_pull)
+
+	elif move.type == DealerAI.MoveType.SABOTAGE:
+		var sabotage_amount = 2 + int((encounter_number - 1) / 3)
+		player_overheat += sabotage_amount
+		overheat_changed.emit(player_overheat)
+		print("Dealer sabotaged player mechanics! +", sabotage_amount, " Overheat.")
+
 	dealer_traction = 0
 	if dealer_bleed > 0:
 		dealer_bleed -= 1
 	status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
-	
+
 	if check_win_condition(): return
-	
+
 	start_new_round()
 
 func start_new_round() -> void:
@@ -243,37 +255,83 @@ func prepare_next_dealer_intent() -> void:
 
 func check_win_condition() -> bool:
 	if dial_value >= 21:
-		match_active = false
-		game_over.emit("PLAYER")
+		_end_match("PLAYER")
 		return true
 	elif dial_value <= -21:
-		match_active = false
-		game_over.emit("DEALER")
+		_end_match("DEALER")
 		return true
 	return false
 
+func _end_match(winner: String) -> void:
+	match_active = false
+	var damage: int = 0
+	if winner == "PLAYER":
+		damage = player_overheat
+		if damage > 0:
+			print("Victory! But overheat burns for ", damage, " HP.")
+	else:
+		damage = 8 + encounter_number * 2
+		print("Defeat! Taking ", damage, " damage.")
+
+	if damage > 0:
+		take_damage(damage)
+
+	match_ended.emit(winner, damage)
+
+func take_damage(amount: int) -> void:
+	player_hp = max(0, player_hp - amount)
+	hp_changed.emit(player_hp, max_hp)
+
+func offer_reward() -> void:
+	var pool: Array[String] = []
+	for card_id in CardDatabase.CARDS:
+		if is_card_available(card_id):
+			pool.append(card_id)
+	pool.shuffle()
+	var choices = pool.slice(0, mini(3, pool.size()))
+	reward_offered.emit(choices)
+
+func select_reward(card_id: String) -> void:
+	master_deck.append(card_id)
+	print("Card added to deck: ", card_id, ". Deck size: ", master_deck.size())
+	advance_encounter()
+
+func skip_reward() -> void:
+	print("Reward skipped.")
+	advance_encounter()
+
+func continue_after_loss() -> void:
+	if run_active:
+		advance_encounter()
+
+func advance_encounter() -> void:
+	encounter_number += 1
+	encounter_started.emit(encounter_number)
+	start_match()
+
+func get_difficulty_modifier() -> float:
+	return 1.0 + (encounter_number - 1) * 0.15
+
 func initialize_deck() -> void:
-	deck = STARTING_DECK.duplicate()
+	deck = master_deck.duplicate()
 	hand.clear()
 	discard_pile.clear()
 	deck.shuffle()
 	print("Deck initialized and shuffled. Total cards: ", deck.size())
 
 func draw_hand(amount: int = 3) -> void:
-	# 1. Clear any leftover cards in the hand straight to the discard pile
 	for card in hand:
 		discard_pile.append(card)
 	hand.clear()
-	
-	# 2. Draw the requested number of cards
+
 	for i in range(amount):
 		if deck.is_empty():
 			recycle_discard_into_deck()
-			
+
 		if not deck.is_empty():
 			var drawn_card = deck.pop_back()
 			hand.append(drawn_card)
-			
+
 	print("Hand drawn: ", hand, " | Remaining Deck: ", deck.size(), " | Discard: ", discard_pile.size())
 
 	hand_drawn.emit(hand)
@@ -307,6 +365,5 @@ func is_card_available(card_id: String) -> bool:
 
 func add_card_to_deck(card_id: String) -> void:
 	if is_card_available(card_id):
-		deck.append(card_id)
-		deck.shuffle()
-		print("Card added to deck: ", card_id)
+		master_deck.append(card_id)
+		print("Card added to master deck: ", card_id)
