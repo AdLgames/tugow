@@ -17,7 +17,7 @@ const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var background_art = $BackgroundArt
 @onready var dealer_portrait = $GameBoard/DealerZone/DealerContent/DealerPortrait
 
-const DEALER_ART_PATH = "res://Assets/TavernAssets/Flying Demon 2D Pixel Art/Sprites/without_outline/IDLE/IDLE_000.png"
+const DEALER_ART_PATH = "res://Assets/TavernAssets/Flying Demon 2D Pixel Art/Sprites/without_outline/IDLE.png"
 const BG_ART_PATH = "res://Assets/TavernAssets/Tables_props/table_0.png"
 
 func _ready() -> void:
