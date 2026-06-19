@@ -95,55 +95,57 @@ func play_card(card_id: String) -> void:
 	is_resolving = true
 	var card = CardDatabase.CARDS[card_id]
 
-	action_announced.emit(card.name)
-	await get_tree().create_timer(0.4).timeout
+	# Remove card from hand immediately
+	discard_card_from_hand(card_id)
 
 	# Roll base value
 	var roll: int = card.base_val
 	if card.variance > 0:
 		roll += randi_range(-card.variance, card.variance)
 
-	var resolved_value = int(roll * next_card_multiplier)
-	if next_card_multiplier != 1.0:
-		action_announced.emit("Multiplier x%.1f applied!" % next_card_multiplier)
-		await get_tree().create_timer(0.3).timeout
+	var applied_multiplier = next_card_multiplier
+	var resolved_value = int(roll * applied_multiplier)
+	if applied_multiplier != 1.0:
 		next_card_multiplier = 1.0
 
-	# Resolve action
+	# Resolve action — dial updates INSTANTLY so player sees result
 	match card.action:
 		"PUSH":
 			move_dial(resolved_value)
-			action_announced.emit("Dial +%d" % resolved_value)
+			if applied_multiplier != 1.0:
+				action_announced.emit("%s: Dial +%d (x%.1f!)" % [card.name, resolved_value, applied_multiplier])
+			else:
+				action_announced.emit("%s: Dial +%d" % [card.name, resolved_value])
 
 		"RESIST":
 			if card.has("stacks"):
 				dealer_is_locked = true
-				action_announced.emit("Dealer LOCKED next turn!")
+				action_announced.emit("%s: Dealer LOCKED!" % card.name)
 			else:
 				dealer_traction += resolved_value
-				action_announced.emit("Traction +%d" % resolved_value)
+				action_announced.emit("%s: Traction +%d" % [card.name, resolved_value])
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
 
 		"MULTIPLIER":
 			next_card_multiplier = card.get("multiplier", 1.0)
-			action_announced.emit("Next card: x%.1f power!" % next_card_multiplier)
+			action_announced.emit("%s: Next card x%.1f!" % [card.name, next_card_multiplier])
 
 		"VENT":
 			var drain = card.get("drain_val", 0)
 			player_overheat = max(0, player_overheat - drain)
 			overheat_changed.emit(player_overheat)
 			move_dial(resolved_value)
-			action_announced.emit("Vented %d heat, Dial +%d" % [drain, resolved_value])
+			action_announced.emit("%s: -%d Heat, Dial +%d" % [card.name, drain, resolved_value])
 
 		"CONDITIONAL_PUSH":
 			var target_mod = card.get("target_mod", 1)
 			if dial_value != 0 and dial_value % target_mod == 0:
 				var bonus = card.get("bonus_val", 0)
 				move_dial(resolved_value + bonus)
-				action_announced.emit("Sweet Spot! Dial +%d" % (resolved_value + bonus))
+				action_announced.emit("%s: Sweet Spot! +%d" % [card.name, resolved_value + bonus])
 			else:
 				move_dial(resolved_value)
-				action_announced.emit("Dial +%d" % resolved_value)
+				action_announced.emit("%s: Dial +%d" % [card.name, resolved_value])
 
 		"PRECISION_STRIKE":
 			move_dial(resolved_value)
@@ -151,9 +153,9 @@ func play_card(card_id: String) -> void:
 			if dial_value % target_mod == 0:
 				var bonus = card.get("bonus_val", 0)
 				move_dial(bonus)
-				action_announced.emit("Precision hit! Dial +%d then +%d" % [resolved_value, bonus])
+				action_announced.emit("%s: Precision! +%d then +%d" % [card.name, resolved_value, bonus])
 			else:
-				action_announced.emit("Dial +%d" % resolved_value)
+				action_announced.emit("%s: Dial +%d" % [card.name, resolved_value])
 
 		"DELAY_PUSH":
 			var delay = card.get("delay_turns", 1)
@@ -164,34 +166,32 @@ func play_card(card_id: String) -> void:
 				"turns_left": delay,
 				"name": card.name
 			})
-			action_announced.emit("Winding up... fires in %d turn(s)" % delay)
+			action_announced.emit("%s: Fires in %d turn(s)!" % [card.name, delay])
 
 		"BLEED":
 			dealer_bleed += card.get("stacks", 0)
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
-			action_announced.emit("Bleed +%d on Dealer" % card.get("stacks", 0))
+			action_announced.emit("%s: Bleed +%d on Dealer" % [card.name, card.get("stacks", 0)])
 
-	await get_tree().create_timer(0.5).timeout
-
-	# Discard played card and update hand UI
-	discard_card_from_hand(card_id)
-
-	# Apply cost
+	# Apply cost immediately too
 	if card.has("cost"):
 		var cost_data = card.cost
 		if cost_data.type == "OVERHEAT":
 			player_overheat += cost_data.amount
 			overheat_changed.emit(player_overheat)
-			action_announced.emit("Overheat +%d" % cost_data.amount)
-			await get_tree().create_timer(0.4).timeout
 
+	# Check for instant win
 	if check_win_condition():
 		return
 
+	# Free action — let player play again immediately
 	if card.get("free_action", false):
 		action_announced.emit("Free action — play again!")
 		is_resolving = false
 		return
+
+	# PAUSE so player can see their result before dealer goes
+	await get_tree().create_timer(0.8).timeout
 
 	await end_player_turn()
 
@@ -203,9 +203,8 @@ func end_player_turn() -> void:
 	if player_overheat > 0:
 		var slip_amount = player_overheat * 2
 		action_announced.emit("Overheat backlash: -%d!" % slip_amount)
-		await get_tree().create_timer(0.5).timeout
 		move_dial(-slip_amount)
-		await get_tree().create_timer(0.3).timeout
+		await get_tree().create_timer(0.6).timeout
 
 	if check_win_condition():
 		return
@@ -224,7 +223,7 @@ func pass_turn_to_dealer() -> void:
 
 	action_announced.emit("Dealer: " + current_dealer_intent.name)
 	dealer_anim_requested.emit("ATTACK")
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(0.8).timeout
 
 	await execute_dealer_move()
 
@@ -252,6 +251,7 @@ func execute_dealer_move() -> void:
 		action_announced.emit("Sabotage! Overheat +%d" % sabotage_amount)
 
 	await get_tree().create_timer(0.6).timeout
+	dealer_anim_requested.emit("IDLE")
 
 	dealer_traction = 0
 	if dealer_bleed > 0:
@@ -268,7 +268,6 @@ func start_new_round() -> void:
 	if check_win_condition():
 		return
 	prepare_next_dealer_intent()
-	dealer_anim_requested.emit("IDLE")
 	draw_hand(3)
 	is_resolving = false
 

@@ -159,11 +159,12 @@ alignment = 1
 theme_override_constants/separation = 4
 
 [node name="DealerSprite" type="TextureRect" parent="GameBoard/TableZone/TableContent"]
-custom_minimum_size = Vector2(128, 128)
+custom_minimum_size = Vector2(158, 138)
 layout_mode = 2
 size_flags_horizontal = 4
 expand_mode = 1
 stretch_mode = 5
+texture_filter = 0
 script = ExtResource("dealer_display")
 
 [node name="AnnouncementLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
