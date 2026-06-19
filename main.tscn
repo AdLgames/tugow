@@ -57,6 +57,22 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="shop_panel"]
+bg_color = Color(0.06, 0.04, 0.02, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 0.75, 0.2, 0.8)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 24.0
+content_margin_top = 20.0
+content_margin_right = 24.0
+content_margin_bottom = 20.0
+
 [sub_resource type="StyleBoxFlat" id="reward_panel"]
 bg_color = Color(0.08, 0.05, 0.03, 0.95)
 border_width_left = 2
@@ -101,7 +117,7 @@ grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
 stretch_mode = 6
-modulate = Color(0.6, 0.5, 0.4, 0.3)
+modulate = Color(0.8, 0.75, 0.7, 0.5)
 
 [node name="GameBoard" type="VBoxContainer" parent="."]
 layout_mode = 1
@@ -236,6 +252,12 @@ theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.4, 0.9, 0.4, 1)
 text = "HP: 30/30"
 
+[node name="GoldLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+text = "Gold: 0"
+
 [node name="OverheatLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.5, 0.3, 1)
@@ -336,3 +358,61 @@ custom_minimum_size = Vector2(150, 40)
 layout_mode = 2
 size_flags_horizontal = 4
 text = "Skip"
+
+[node name="ShopOverlay" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.75)
+
+[node name="ShopPanel" type="PanelContainer" parent="ShopOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -220.0
+offset_right = 400.0
+offset_bottom = 220.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("shop_panel")
+
+[node name="ShopContent" type="VBoxContainer" parent="ShopOverlay/ShopPanel"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="ShopHeader" type="HBoxContainer" parent="ShopOverlay/ShopPanel/ShopContent"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 32
+
+[node name="ShopTitle" type="Label" parent="ShopOverlay/ShopPanel/ShopContent/ShopHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+text = "SHOP"
+
+[node name="ShopGoldLabel" type="Label" parent="ShopOverlay/ShopPanel/ShopContent/ShopHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+text = "Gold: 0"
+
+[node name="ShopCardsContainer" type="HBoxContainer" parent="ShopOverlay/ShopPanel/ShopContent"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 16
+
+[node name="LeaveShopButton" type="Button" parent="ShopOverlay/ShopPanel/ShopContent"]
+custom_minimum_size = Vector2(180, 45)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Leave Shop"

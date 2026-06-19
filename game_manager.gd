@@ -3,6 +3,7 @@ extends Node
 # --- RUN STATE (persists across encounters) ---
 var player_hp: int = 30
 var max_hp: int = 30
+var gold: int = 0
 var encounter_number: int = 1
 var run_active: bool = false
 var master_deck: Array[String] = []
@@ -36,6 +37,12 @@ const STARTING_DECK: Array[String] = [
 	"overdrive"
 ]
 
+const CARD_PRICES = {
+	"COMMON": 30,
+	"UNCOMMON": 60,
+	"RARE": 100
+}
+
 # --- SIGNALS ---
 signal dial_changed(new_value)
 signal overheat_changed(new_value)
@@ -45,18 +52,23 @@ signal hand_drawn(fresh_cards: Array)
 signal match_ended(winner: String, damage_taken: int)
 signal deck_counts_changed(deck_size: int, discard_size: int)
 signal hp_changed(current_hp: int, max_hp: int)
+signal gold_changed(amount: int)
 signal encounter_started(encounter_num: int)
 signal reward_offered(card_choices: Array)
+signal shop_opened(shop_items: Array)
 signal run_over(final_encounter: int)
 signal action_announced(text: String)
 signal dealer_anim_requested(anim_name: String)
 
 func start_run() -> void:
 	player_hp = max_hp
+	gold = 0
 	encounter_number = 1
 	run_active = true
 	master_deck = STARTING_DECK.duplicate()
+	unlocked_magic_cards.clear()
 	hp_changed.emit(player_hp, max_hp)
+	gold_changed.emit(gold)
 	encounter_started.emit(encounter_number)
 	start_match()
 
@@ -95,10 +107,8 @@ func play_card(card_id: String) -> void:
 	is_resolving = true
 	var card = CardDatabase.CARDS[card_id]
 
-	# Remove card from hand immediately
 	discard_card_from_hand(card_id)
 
-	# Roll base value
 	var roll: int = card.base_val
 	if card.variance > 0:
 		roll += randi_range(-card.variance, card.variance)
@@ -108,7 +118,6 @@ func play_card(card_id: String) -> void:
 	if applied_multiplier != 1.0:
 		next_card_multiplier = 1.0
 
-	# Resolve action — dial updates INSTANTLY so player sees result
 	match card.action:
 		"PUSH":
 			move_dial(resolved_value)
@@ -173,24 +182,20 @@ func play_card(card_id: String) -> void:
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
 			action_announced.emit("%s: Bleed +%d on Dealer" % [card.name, card.get("stacks", 0)])
 
-	# Apply cost immediately too
 	if card.has("cost"):
 		var cost_data = card.cost
 		if cost_data.type == "OVERHEAT":
 			player_overheat += cost_data.amount
 			overheat_changed.emit(player_overheat)
 
-	# Check for instant win
 	if check_win_condition():
 		return
 
-	# Free action — let player play again immediately
 	if card.get("free_action", false):
 		action_announced.emit("Free action — play again!")
 		is_resolving = false
 		return
 
-	# PAUSE so player can see their result before dealer goes
 	await get_tree().create_timer(0.8).timeout
 
 	await end_player_turn()
@@ -305,6 +310,9 @@ func _end_match(winner: String) -> void:
 	var damage: int = 0
 	if winner == "PLAYER":
 		damage = player_overheat
+		var gold_earned = 25 + encounter_number * 10
+		gold += gold_earned
+		gold_changed.emit(gold)
 		dealer_anim_requested.emit("DEATH")
 	else:
 		damage = 8 + encounter_number * 2
@@ -330,9 +338,40 @@ func offer_reward() -> void:
 
 func select_reward(card_id: String) -> void:
 	master_deck.append(card_id)
-	advance_encounter()
+	var card = CardDatabase.CARDS.get(card_id, {})
+	if card.get("type", "") == "MAGIC":
+		unlock_magic_card(card_id)
+	open_shop()
 
 func skip_reward() -> void:
+	open_shop()
+
+func open_shop() -> void:
+	var pool: Array[String] = []
+	for card_id in CardDatabase.CARDS:
+		pool.append(card_id)
+	pool.shuffle()
+	var items: Array[Dictionary] = []
+	for i in range(mini(4, pool.size())):
+		var card_id = pool[i]
+		var rarity = CardDatabase.CARDS[card_id].get("rarity", "COMMON")
+		items.append({
+			"card_id": card_id,
+			"price": CARD_PRICES.get(rarity, 50)
+		})
+	shop_opened.emit(items)
+
+func buy_card(card_id: String, price: int) -> void:
+	if gold < price:
+		return
+	gold -= price
+	gold_changed.emit(gold)
+	master_deck.append(card_id)
+	var card = CardDatabase.CARDS.get(card_id, {})
+	if card.get("type", "") == "MAGIC":
+		unlock_magic_card(card_id)
+
+func leave_shop() -> void:
 	advance_encounter()
 
 func continue_after_loss() -> void:
