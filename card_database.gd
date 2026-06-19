@@ -44,6 +44,7 @@ const CARDS: Dictionary = {
 		"variance": 1,           # Resolves 2–4
 		"rarity": "COMMON",
 		"tag": ["STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-clubs-3.png",
 		"description": "A reliable forward stroke. Pushes the dial by 2–4.",
 	},
 
@@ -54,6 +55,7 @@ const CARDS: Dictionary = {
 		"variance": 0,           # Fixed: always reduces next dealer pull by 3
 		"rarity": "COMMON",
 		"tag": ["DEFENSE"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-spades-3.png",
 		"description": "Plant your feet. Reduces the Dealer's next pull by 3.",
 	},
 
@@ -65,6 +67,7 @@ const CARDS: Dictionary = {
 		"drain_val": 2,          # Removes 2 Overheat stacks
 		"rarity": "COMMON",
 		"tag": ["STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-hearts-2.png",
 		"description": "Bleed off steam. Removes 2 Overheat, pushes +1.",
 	},
 
@@ -75,6 +78,7 @@ const CARDS: Dictionary = {
 		"variance": 0,           # Fixed push of 2 — boring but safe
 		"rarity": "COMMON",
 		"tag": ["PRECISION"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-diamonds-2.png",
 		"description": "Measured and exact. Pushes exactly +2, no variance.",
 	},
 
@@ -88,6 +92,7 @@ const CARDS: Dictionary = {
 		"cost": {"type": "OVERHEAT", "amount": 2}, # STRONGLY TYPED
 		"rarity": "UNCOMMON",
 		"tag": ["HEAVY", "STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-clubs-7.png",
 		"description": "Massive thrust. Pushes 5–9 but adds 2 Overheat.",
 	},
 
@@ -99,6 +104,7 @@ const CARDS: Dictionary = {
 		"delay_turns": 1,
 		"rarity": "UNCOMMON",
 		"tag": ["STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-hearts-7.png",
 		"description": "Coil tension now, release next turn. Pushes 6–8 at start of your next turn.",
 	},
 
@@ -111,6 +117,7 @@ const CARDS: Dictionary = {
 		"free_action": true,     # PLAYER KEEPS THEIR TURN
 		"rarity": "UNCOMMON",
 		"tag": ["STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-diamonds-4.png",
 		"description": "Engage a higher gear. The next card you play is worth 1.5× its rolled value.",
 	},
 
@@ -123,6 +130,7 @@ const CARDS: Dictionary = {
 		"bonus_val": 8,          # Extra push if condition met (total 3+8=11)
 		"rarity": "UNCOMMON",
 		"tag": ["PRECISION"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-hearts-5.png",
 		"description": "Pushes +3. If the dial is on a multiple of 5, pushes +11 instead.",
 	},
 
@@ -134,6 +142,7 @@ const CARDS: Dictionary = {
 		"cost": {"type": "OVERHEAT", "amount": 1}, # STRONGLY TYPED
 		"rarity": "UNCOMMON",
 		"tag": ["DEFENSE", "HEAVY"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-spades-6.png",
 		"description": "Heavy protection. Reduces Dealer's next pull by 5–7, but adds 1 Overheat.",
 	},
 
@@ -145,6 +154,7 @@ const CARDS: Dictionary = {
 		"stacks": 2,             # Applies 2 Bleed to dealer (each reduces dealer pull by 1/stack/turn)
 		"rarity": "UNCOMMON",
 		"tag": ["ATTRITION"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-spades-2.png",
 		"description": "Corrode the mechanism. Dealer's pulls are reduced by 1 per Bleed stack for 2 turns.",
 	},
 
@@ -158,6 +168,7 @@ const CARDS: Dictionary = {
 		"cost": {"type": "OVERHEAT", "amount": 3}, # STRONGLY TYPED
 		"rarity": "RARE",
 		"tag": ["HEAVY", "STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-clubs-10.png",
 		"description": "Push everything to the limit. Pushes 7–13, adds 3 Overheat. Dangerous.",
 	},
 
@@ -170,6 +181,7 @@ const CARDS: Dictionary = {
 		"bonus_val": 10,         # Lands exactly on multiple of 5 → +10 bonus on top of push
 		"rarity": "RARE",
 		"tag": ["PRECISION", "STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-diamonds-5.png",
 		"description": "Pushes +5. If the result lands exactly on a multiple of 5, gain +10 additional.",
 	},
 
@@ -181,6 +193,7 @@ const CARDS: Dictionary = {
 		"drain_val": 99,         # Clears ALL Overheat
 		"rarity": "RARE",
 		"tag": ["DEFENSE", "STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-hearts-9.png",
 		"description": "Full pressure release. Clears all Overheat stacks, pushes +2.",
 	},
 
@@ -192,6 +205,7 @@ const CARDS: Dictionary = {
 		"stacks": 1,             # Applies "LOCKED" status — dealer's NEXT TURN does 0 pull
 		"rarity": "RARE",
 		"tag": ["DEFENSE", "PRECISION"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-spades-10.png",
 		"description": "Engage the governor. The Dealer's next turn pull is reduced to zero.",
 	},
 
@@ -205,6 +219,7 @@ const CARDS: Dictionary = {
 		"free_action": true,     # PLAYER KEEPS THEIR TURN
 		"rarity": "RARE",
 		"tag": ["HEAVY", "STEAM"],
+		"art": "res://Assets/Pixel Fantasy Player Cards/Player Cards/card-hearts-8.png",
 		"description": "Push twice as hard. Next card played hits for 2× value, but adds 2 Overheat.",
 	},
 }
