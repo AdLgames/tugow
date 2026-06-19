@@ -10,6 +10,8 @@ extends Control
 @onready var dial_bar = $GameBoard/TableZone/TableContent/DialBar
 @onready var hp_label = $GameBoard/PlayerZone/PlayerContent/PlayerStats/HPLabel
 @onready var encounter_label = $GameBoard/DealerZone/DealerContent/DealerInfo/EncounterLabel
+@onready var announcement_label = $GameBoard/TableZone/TableContent/AnnouncementLabel
+@onready var dealer_sprite = $GameBoard/TableZone/TableContent/DealerSprite
 
 const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var hand_container = $GameBoard/PlayerZone/PlayerContent/HandContainer
@@ -19,16 +21,15 @@ const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var continue_button = $GameBoard/PlayerZone/PlayerContent/MatchEndContainer/ContinueButton
 @onready var restart_run_button = $GameBoard/PlayerZone/PlayerContent/MatchEndContainer/RestartRunButton
 @onready var background_art = $BackgroundArt
-@onready var dealer_portrait = $GameBoard/DealerZone/DealerContent/DealerPortrait
 
 @onready var reward_overlay = $RewardOverlay
 @onready var reward_cards_container = $RewardOverlay/RewardPanel/RewardContent/RewardCardsContainer
 @onready var skip_reward_button = $RewardOverlay/RewardPanel/RewardContent/SkipRewardButton
 
-const DEALER_ART_PATH = "res://Assets/TavernAssets/Flying Demon 2D Pixel Art/Sprites/without_outline/IDLE.png"
 const BG_ART_PATH = "res://Assets/TavernAssets/Tables_props/table_0.png"
 
 var last_winner: String = ""
+var announce_tween: Tween
 
 func _ready() -> void:
 	GameManager.dial_changed.connect(_on_dial_changed)
@@ -42,6 +43,8 @@ func _ready() -> void:
 	GameManager.encounter_started.connect(_on_encounter_started)
 	GameManager.reward_offered.connect(_on_reward_offered)
 	GameManager.run_over.connect(_on_run_over)
+	GameManager.action_announced.connect(_on_action_announced)
+	GameManager.dealer_anim_requested.connect(_on_dealer_anim_requested)
 	continue_button.pressed.connect(_on_continue_pressed)
 	restart_run_button.pressed.connect(_on_restart_run_pressed)
 	skip_reward_button.pressed.connect(_on_skip_reward_pressed)
@@ -49,10 +52,23 @@ func _ready() -> void:
 	GameManager.start_run()
 
 func _load_art_assets() -> void:
-	if ResourceLoader.exists(DEALER_ART_PATH):
-		dealer_portrait.texture = load(DEALER_ART_PATH)
 	if ResourceLoader.exists(BG_ART_PATH):
 		background_art.texture = load(BG_ART_PATH)
+
+func _on_action_announced(text: String) -> void:
+	announcement_label.text = text
+	announcement_label.modulate.a = 1.0
+	if announce_tween and announce_tween.is_running():
+		announce_tween.kill()
+	announce_tween = create_tween()
+	announce_tween.tween_interval(2.0)
+	announce_tween.tween_property(announcement_label, "modulate:a", 0.0, 0.5)
+
+func _on_dealer_anim_requested(anim_name: String) -> void:
+	if dealer_sprite.has_method("play_oneshot") and anim_name != "IDLE":
+		dealer_sprite.play_oneshot(anim_name)
+	elif dealer_sprite.has_method("set_animation"):
+		dealer_sprite.set_animation(anim_name)
 
 func _on_card_ui_clicked(card_id: String) -> void:
 	GameManager.play_card(card_id)

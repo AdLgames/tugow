@@ -1,17 +1,17 @@
 [gd_scene format=3 uid="uid://corhw50u5ar8t"]
 
 [ext_resource type="Script" uid="uid://8r7eabu7oll3" path="res://main.gd" id="1_ig7tw"]
-[ext_resource type="Texture2D" uid="uid://b6tcsxf535nbx" path="res://Assets/Pixel Fantasy Player Cards/Player Cards/card-back2.png" id="card_back"]
 [ext_resource type="Theme" path="res://game_theme.tres" id="theme"]
+[ext_resource type="Script" path="res://dealer_display.gd" id="dealer_display"]
 
 [sub_resource type="StyleBoxFlat" id="dealer_panel"]
 bg_color = Color(0.1, 0.06, 0.04, 0.9)
 border_width_bottom = 2
 border_color = Color(0.5, 0.3, 0.1, 0.8)
 content_margin_left = 20.0
-content_margin_top = 12.0
+content_margin_top = 8.0
 content_margin_right = 20.0
-content_margin_bottom = 12.0
+content_margin_bottom = 8.0
 
 [sub_resource type="StyleBoxFlat" id="table_panel"]
 bg_color = Color(0.0, 0.0, 0.0, 0.0)
@@ -120,12 +120,6 @@ theme_override_styles/panel = SubResource("dealer_panel")
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="DealerPortrait" type="TextureRect" parent="GameBoard/DealerZone/DealerContent"]
-custom_minimum_size = Vector2(64, 64)
-layout_mode = 2
-expand_mode = 1
-stretch_mode = 5
-
 [node name="DealerInfo" type="VBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -154,24 +148,6 @@ theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.6, 0.7, 0.9, 1)
 text = ""
 
-[node name="DealerCards" type="HBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
-layout_mode = 2
-theme_override_constants/separation = -20
-
-[node name="DealerCard1" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(48, 72)
-layout_mode = 2
-texture = ExtResource("card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="DealerCard2" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(48, 72)
-layout_mode = 2
-texture = ExtResource("card_back")
-expand_mode = 1
-stretch_mode = 5
-
 [node name="TableZone" type="PanelContainer" parent="GameBoard"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -181,6 +157,23 @@ theme_override_styles/panel = SubResource("table_panel")
 layout_mode = 2
 alignment = 1
 theme_override_constants/separation = 4
+
+[node name="DealerSprite" type="TextureRect" parent="GameBoard/TableZone/TableContent"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+size_flags_horizontal = 4
+expand_mode = 1
+stretch_mode = 5
+script = ExtResource("dealer_display")
+
+[node name="AnnouncementLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(1, 0.9, 0.5, 1)
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="DialContainer" type="PanelContainer" parent="GameBoard/TableZone/TableContent"]
 layout_mode = 2
