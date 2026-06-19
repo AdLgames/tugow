@@ -5,32 +5,29 @@
 [ext_resource type="Theme" path="res://game_theme.tres" id="theme"]
 
 [sub_resource type="StyleBoxFlat" id="dealer_panel"]
-bg_color = Color(0.15, 0.1, 0.08, 0.9)
+bg_color = Color(0.1, 0.06, 0.04, 0.8)
 border_width_bottom = 2
-border_color = Color(0.4, 0.25, 0.1, 1)
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 16.0
-content_margin_bottom = 8.0
+border_color = Color(0.5, 0.3, 0.1, 0.8)
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 20.0
+content_margin_bottom = 10.0
 
 [sub_resource type="StyleBoxFlat" id="table_panel"]
-bg_color = Color(0.18, 0.14, 0.08, 0.85)
-border_width_top = 1
-border_width_bottom = 1
-border_color = Color(0.35, 0.25, 0.1, 0.6)
+bg_color = Color(0.0, 0.0, 0.0, 0.0)
 content_margin_left = 16.0
 content_margin_top = 8.0
 content_margin_right = 16.0
 content_margin_bottom = 8.0
 
 [sub_resource type="StyleBoxFlat" id="player_panel"]
-bg_color = Color(0.12, 0.09, 0.05, 0.9)
+bg_color = Color(0.08, 0.05, 0.03, 0.85)
 border_width_top = 2
-border_color = Color(0.4, 0.25, 0.1, 1)
+border_color = Color(0.5, 0.3, 0.1, 0.8)
 content_margin_left = 16.0
-content_margin_top = 12.0
+content_margin_top = 10.0
 content_margin_right = 16.0
-content_margin_bottom = 12.0
+content_margin_bottom = 10.0
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -61,14 +58,30 @@ grow_vertical = 2
 
 [node name="DealerZone" type="PanelContainer" parent="GameBoard"]
 layout_mode = 2
-size_flags_vertical = 3
-size_flags_stretch_ratio = 0.35
+size_flags_vertical = 0
 theme_override_styles/panel = SubResource("dealer_panel")
 
 [node name="DealerContent" type="HBoxContainer" parent="GameBoard/DealerZone"]
 layout_mode = 2
-theme_override_constants/separation = 20
-alignment = 1
+theme_override_constants/separation = 24
+
+[node name="DealerCards" type="HBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
+layout_mode = 2
+theme_override_constants/separation = -20
+
+[node name="DealerCard1" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
+custom_minimum_size = Vector2(48, 72)
+layout_mode = 2
+texture = ExtResource("card_back")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DealerCard2" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
+custom_minimum_size = Vector2(48, 72)
+layout_mode = 2
+texture = ExtResource("card_back")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="DealerInfo" type="VBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
 layout_mode = 2
@@ -77,45 +90,24 @@ alignment = 1
 
 [node name="DealerTitle" type="Label" parent="GameBoard/DealerZone/DealerContent/DealerInfo"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.9, 0.8, 0.6, 1)
 text = "THE DEALER"
-horizontal_alignment = 1
 
 [node name="IntentLabel" type="Label" parent="GameBoard/DealerZone/DealerContent/DealerInfo"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.5, 0.3, 1)
 text = "Intent"
-horizontal_alignment = 1
 
 [node name="StatusLabel" type="Label" parent="GameBoard/DealerZone/DealerContent/DealerInfo"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.6, 0.7, 0.9, 1)
 text = ""
-horizontal_alignment = 1
-
-[node name="DealerCards" type="HBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
-layout_mode = 2
-alignment = 1
-theme_override_constants/separation = -30
-
-[node name="DealerCard1" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(72, 108)
-layout_mode = 2
-texture = ExtResource("card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="DealerCard2" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(72, 108)
-layout_mode = 2
-texture = ExtResource("card_back")
-expand_mode = 1
-stretch_mode = 5
 
 [node name="TableZone" type="PanelContainer" parent="GameBoard"]
 layout_mode = 2
 size_flags_vertical = 3
-size_flags_stretch_ratio = 0.3
 theme_override_styles/panel = SubResource("table_panel")
 
 [node name="TableContent" type="VBoxContainer" parent="GameBoard/TableZone"]
@@ -124,7 +116,7 @@ alignment = 1
 
 [node name="DialLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 56
+theme_override_font_sizes/font_size = 64
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
 text = "0"
 horizontal_alignment = 1
@@ -132,24 +124,22 @@ horizontal_alignment = 1
 [node name="DialSubLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.6, 0.5, 0.35, 1)
-text = "DIAL"
+theme_override_colors/font_color = Color(0.5, 0.4, 0.3, 1)
+text = "D I A L"
 horizontal_alignment = 1
 
 [node name="PlayerZone" type="PanelContainer" parent="GameBoard"]
 layout_mode = 2
-size_flags_vertical = 3
-size_flags_stretch_ratio = 0.55
+size_flags_vertical = 0
 theme_override_styles/panel = SubResource("player_panel")
 
 [node name="PlayerContent" type="VBoxContainer" parent="GameBoard/PlayerZone"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="PlayerStats" type="HBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 layout_mode = 2
 alignment = 1
-theme_override_constants/separation = 40
 
 [node name="OverheatLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
 layout_mode = 2
@@ -158,14 +148,12 @@ text = "Overheat: 0"
 
 [node name="HandContainer" type="HBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 layout_mode = 2
-size_flags_vertical = 3
 alignment = 1
 theme_override_constants/separation = 12
 
 [node name="GameOverContainer" type="VBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 visible = false
 layout_mode = 2
-size_flags_vertical = 3
 alignment = 1
 
 [node name="ResultLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/GameOverContainer"]
