@@ -359,7 +359,8 @@ func skip_reward() -> void:
 func open_shop() -> void:
 	var pool: Array[String] = []
 	for card_id in CardDatabase.CARDS:
-		pool.append(card_id)
+		if is_card_available(card_id):
+			pool.append(card_id)
 	pool.shuffle()
 	var items: Array[Dictionary] = []
 	for i in range(mini(4, pool.size())):
@@ -390,6 +391,10 @@ func continue_after_loss() -> void:
 
 func advance_encounter() -> void:
 	encounter_number += 1
+	if encounter_number == 4:
+		action_announced.emit("UNCOMMON cards now available!")
+	elif encounter_number == 7:
+		action_announced.emit("RARE cards now available!")
 	encounter_started.emit(encounter_number)
 	start_match()
 
@@ -429,8 +434,19 @@ func unlock_magic_card(card_id: String) -> void:
 	if card_id not in unlocked_magic_cards:
 		unlocked_magic_cards.append(card_id)
 
+func get_unlocked_rarities() -> Array[String]:
+	var rarities: Array[String] = ["COMMON"]
+	if encounter_number >= 4:
+		rarities.append("UNCOMMON")
+	if encounter_number >= 7:
+		rarities.append("RARE")
+	return rarities
+
 func is_card_available(card_id: String) -> bool:
 	var card = CardDatabase.CARDS.get(card_id, {})
+	var rarity = card.get("rarity", "COMMON")
+	if rarity not in get_unlocked_rarities():
+		return false
 	if card.get("type", "") == "NUMBER":
 		return true
 	if card.get("type", "") == "MAGIC":
