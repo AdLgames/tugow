@@ -12,6 +12,10 @@ var current_dealer_intent: Dictionary = {}
 var match_active: bool = false
 var pending_effects: Array[Dictionary] = []
 
+# --- CARD TYPE TOGGLES ---
+var magic_enabled: bool = false
+var unlocked_magic_cards: Array[String] = []
+
 # --- DECK MANAGEMENT STATE ---
 var deck: Array[String] = []
 var hand: Array[String] = []
@@ -285,3 +289,22 @@ func discard_card_from_hand(card_id: String) -> void:
 	if index != -1:
 		hand.remove_at(index)
 		discard_pile.append(card_id)
+
+func unlock_magic_card(card_id: String) -> void:
+	if card_id not in unlocked_magic_cards:
+		unlocked_magic_cards.append(card_id)
+		print("Magic card unlocked: ", card_id)
+
+func is_card_available(card_id: String) -> bool:
+	var card = CardDatabase.CARDS.get(card_id, {})
+	if card.get("type", "") == "NUMBER":
+		return true
+	if card.get("type", "") == "MAGIC":
+		return magic_enabled or card_id in unlocked_magic_cards
+	return false
+
+func add_card_to_deck(card_id: String) -> void:
+	if is_card_available(card_id):
+		deck.append(card_id)
+		deck.shuffle()
+		print("Card added to deck: ", card_id)

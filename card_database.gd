@@ -20,6 +20,7 @@ extends Node
 #   "delay_turns" : int        — Turns before a DELAY card resolves
 #   "stacks"      : int        — Number of status stacks applied (BLEED, LOCKED, etc.)
 #   "drain_val"   : int        — How much Overheat is purged on play (VENT cards)
+#   "type"        : String     — "NUMBER" (pure value) or "MAGIC" (special mechanics)
 #   "tag"         : Array      — Mechanical tags for synergy checks ["STEAM","PRECISION","HEAVY"]
 
 # ── ACTION TYPES ───────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ const CARDS: Dictionary = {
 	"piston_jab": {
 		"name": "Piston Jab",
 		"action": "PUSH",
+		"type": "NUMBER",
 		"base_val": 3,
 		"variance": 1,           # Resolves 2–4
 		"rarity": "COMMON",
@@ -51,6 +53,7 @@ const CARDS: Dictionary = {
 	"grounding_cleats": {
 		"name": "Grounding Cleats",
 		"action": "RESIST",
+		"type": "NUMBER",
 		"base_val": 3,
 		"variance": 0,           # Fixed: always reduces next dealer pull by 3
 		"rarity": "COMMON",
@@ -62,6 +65,7 @@ const CARDS: Dictionary = {
 	"pressure_gauge": {
 		"name": "Pressure Gauge",
 		"action": "VENT",
+		"type": "NUMBER",
 		"base_val": 1,
 		"variance": 0,
 		"drain_val": 2,          # Removes 2 Overheat stacks
@@ -74,6 +78,7 @@ const CARDS: Dictionary = {
 	"rivet_tap": {
 		"name": "Rivet Tap",
 		"action": "PUSH",
+		"type": "NUMBER",
 		"base_val": 2,
 		"variance": 0,           # Fixed push of 2 — boring but safe
 		"rarity": "COMMON",
@@ -87,6 +92,7 @@ const CARDS: Dictionary = {
 	"overdrive": {
 		"name": "Overdrive",
 		"action": "PUSH",
+		"type": "NUMBER",
 		"base_val": 7,
 		"variance": 2,           # Resolves 5–9
 		"cost": {"type": "OVERHEAT", "amount": 2}, # STRONGLY TYPED
@@ -99,6 +105,7 @@ const CARDS: Dictionary = {
 	"windup_spring": {
 		"name": "Wind-up Spring",
 		"action": "DELAY_PUSH",
+		"type": "MAGIC",
 		"base_val": 7,
 		"variance": 1,           # Resolves 6–8 on trigger turn
 		"delay_turns": 1,
@@ -111,6 +118,7 @@ const CARDS: Dictionary = {
 	"gear_multiplier": {
 		"name": "Overdrive Gear",
 		"action": "MULTIPLIER",
+		"type": "MAGIC",
 		"base_val": 0,
 		"variance": 0,
 		"multiplier": 1.5,       # Next card's resolved value × 1.5 (rounded down)
@@ -124,6 +132,7 @@ const CARDS: Dictionary = {
 	"sweet_spot": {
 		"name": "Sweet Spot",
 		"action": "CONDITIONAL_PUSH",
+		"type": "MAGIC",
 		"base_val": 3,
 		"variance": 0,
 		"target_mod": 5,         # Bonus fires if dial % 5 == 0
@@ -137,6 +146,7 @@ const CARDS: Dictionary = {
 	"iron_brace": {
 		"name": "Iron Brace",
 		"action": "RESIST",
+		"type": "NUMBER",
 		"base_val": 6,
 		"variance": 1,           # Reduces next dealer pull by 5–7
 		"cost": {"type": "OVERHEAT", "amount": 1}, # STRONGLY TYPED
@@ -149,6 +159,7 @@ const CARDS: Dictionary = {
 	"rust_bleed": {
 		"name": "Rust Bleed",
 		"action": "BLEED",
+		"type": "MAGIC",
 		"base_val": 1,
 		"variance": 0,
 		"stacks": 2,             # Applies 2 Bleed to dealer (each reduces dealer pull by 1/stack/turn)
@@ -163,6 +174,7 @@ const CARDS: Dictionary = {
 	"redline": {
 		"name": "Redline",
 		"action": "PUSH",
+		"type": "NUMBER",
 		"base_val": 10,
 		"variance": 3,           # Resolves 7–13
 		"cost": {"type": "OVERHEAT", "amount": 3}, # STRONGLY TYPED
@@ -175,6 +187,7 @@ const CARDS: Dictionary = {
 	"dead_reckoning": {
 		"name": "Dead Reckoning",
 		"action": "PRECISION_STRIKE",
+		"type": "MAGIC",
 		"base_val": 5,
 		"variance": 0,
 		"target_mod": 5,
@@ -188,6 +201,7 @@ const CARDS: Dictionary = {
 	"emergency_vent": {
 		"name": "Emergency Vent",
 		"action": "VENT",
+		"type": "MAGIC",
 		"base_val": 2,
 		"variance": 0,
 		"drain_val": 99,         # Clears ALL Overheat
@@ -200,6 +214,7 @@ const CARDS: Dictionary = {
 	"governor_lock": {
 		"name": "Governor Lock",
 		"action": "RESIST",
+		"type": "MAGIC",
 		"base_val": 10,
 		"variance": 0,
 		"stacks": 1,             # Applies "LOCKED" status — dealer's NEXT TURN does 0 pull
@@ -212,6 +227,7 @@ const CARDS: Dictionary = {
 	"double_action": {
 		"name": "Double Action",
 		"action": "MULTIPLIER",
+		"type": "MAGIC",
 		"base_val": 0,
 		"variance": 0,
 		"multiplier": 2.0,       # Next card's value × 2.0 — high ceiling, pairs with Overheat risk
@@ -223,3 +239,20 @@ const CARDS: Dictionary = {
 		"description": "Push twice as hard. Next card played hits for 2× value, but adds 2 Overheat.",
 	},
 }
+
+static func get_cards_by_type(card_type: String) -> Array[String]:
+	var result: Array[String] = []
+	for card_id in CARDS:
+		if CARDS[card_id].get("type", "") == card_type:
+			result.append(card_id)
+	return result
+
+static func get_available_cards(include_magic: bool) -> Array[String]:
+	var result: Array[String] = []
+	for card_id in CARDS:
+		var card = CARDS[card_id]
+		if card.get("type", "") == "NUMBER":
+			result.append(card_id)
+		elif include_magic and card.get("type", "") == "MAGIC":
+			result.append(card_id)
+	return result
