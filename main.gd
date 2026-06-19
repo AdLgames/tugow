@@ -16,6 +16,7 @@ extends Control
 @onready var dealer_sprite = $GameBoard/TableZone/TableContent/DealerSprite
 @onready var turn_banner = $GameBoard/TableZone/TableContent/TurnBanner
 @onready var turn_banner_label = $GameBoard/TableZone/TableContent/TurnBanner/TurnBannerLabel
+@onready var game_board = $GameBoard
 
 const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var hand_container = $GameBoard/PlayerZone/PlayerContent/HandContainer
@@ -36,11 +37,24 @@ const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var shop_cards_container = $ShopOverlay/ShopPanel/ShopContent/ShopCardsContainer
 @onready var leave_shop_button = $ShopOverlay/ShopPanel/ShopContent/LeaveShopButton
 
+@onready var main_menu_overlay = $MainMenuOverlay
+@onready var start_run_button = $MainMenuOverlay/MenuContent/StartRunButton
+@onready var card_collection_button = $MainMenuOverlay/MenuContent/CardCollectionButton
+@onready var best_run_label = $MainMenuOverlay/MenuContent/BestRunLabel
+
+@onready var card_collection_overlay = $CardCollectionOverlay
+@onready var common_cards_container = $CardCollectionOverlay/CollectionContent/CommonSection/CommonCards
+@onready var uncommon_cards_container = $CardCollectionOverlay/CollectionContent/UncommonSection/UncommonCards
+@onready var rare_cards_container = $CardCollectionOverlay/CollectionContent/RareSection/RareCards
+@onready var collection_tier_label = $CardCollectionOverlay/CollectionContent/CollectionHeader/CollectionTierLabel
+@onready var collection_back_button = $CardCollectionOverlay/CollectionContent/BackButton
+
 const BG_ART_PATH = "res://Assets/TavernAssets/1781874905946.png"
 
 var last_winner: String = ""
 var announce_tween: Tween
 var banner_tween: Tween
+var best_encounter: int = 0
 
 func _ready() -> void:
 	GameManager.dial_changed.connect(_on_dial_changed)
@@ -65,12 +79,81 @@ func _ready() -> void:
 	skip_reward_button.pressed.connect(_on_skip_reward_pressed)
 	leave_shop_button.pressed.connect(_on_leave_shop_pressed)
 	end_turn_button.pressed.connect(_on_end_turn_pressed)
+	start_run_button.pressed.connect(_on_start_run_pressed)
+	card_collection_button.pressed.connect(_on_card_collection_pressed)
+	collection_back_button.pressed.connect(_on_collection_back_pressed)
 	_load_art_assets()
-	GameManager.start_run()
+	_show_main_menu()
 
 func _load_art_assets() -> void:
 	if ResourceLoader.exists(BG_ART_PATH):
 		background_art.texture = load(BG_ART_PATH)
+
+# --- MAIN MENU ---
+
+func _show_main_menu() -> void:
+	game_board.visible = false
+	reward_overlay.visible = false
+	shop_overlay.visible = false
+	card_collection_overlay.visible = false
+	main_menu_overlay.visible = true
+	if best_encounter > 0:
+		best_run_label.text = "Best run: Encounter %d" % best_encounter
+	else:
+		best_run_label.text = ""
+
+func _on_start_run_pressed() -> void:
+	main_menu_overlay.visible = false
+	game_board.visible = true
+	GameManager.start_run()
+
+func _on_card_collection_pressed() -> void:
+	main_menu_overlay.visible = false
+	card_collection_overlay.visible = true
+	_populate_card_collection()
+
+func _on_collection_back_pressed() -> void:
+	card_collection_overlay.visible = false
+	_show_main_menu()
+
+func _populate_card_collection() -> void:
+	for container in [common_cards_container, uncommon_cards_container, rare_cards_container]:
+		for child in container.get_children():
+			child.queue_free()
+
+	var tier_text_parts: Array[String] = []
+	var unlocked_rarities = GameManager.get_unlocked_rarities()
+
+	for card_id in CardDatabase.CARDS:
+		var card_data = CardDatabase.CARDS[card_id]
+		var rarity = card_data.get("rarity", "COMMON")
+		var is_unlocked = rarity in unlocked_rarities
+
+		var card_instance = CARD_UI_SCENE.instantiate()
+
+		match rarity:
+			"COMMON":
+				common_cards_container.add_child(card_instance)
+			"UNCOMMON":
+				uncommon_cards_container.add_child(card_instance)
+			"RARE":
+				rare_cards_container.add_child(card_instance)
+
+		if card_instance.has_method("populate_card"):
+			card_instance.populate_card(card_id)
+
+		if not is_unlocked:
+			card_instance.modulate = Color(0.3, 0.3, 0.3, 0.6)
+
+	if "RARE" in unlocked_rarities:
+		tier_text_parts.append("All tiers unlocked")
+	elif "UNCOMMON" in unlocked_rarities:
+		tier_text_parts.append("RARE unlocks at encounter 7")
+	else:
+		tier_text_parts.append("UNCOMMON unlocks at encounter 4")
+	collection_tier_label.text = " | ".join(tier_text_parts)
+
+# --- GAME SIGNALS ---
 
 func _on_action_announced(text: String) -> void:
 	announcement_label.text = text
@@ -247,7 +330,7 @@ func _on_continue_pressed() -> void:
 
 func _on_restart_run_pressed() -> void:
 	match_end_container.visible = false
-	GameManager.start_run()
+	_show_main_menu()
 
 # --- REWARD SCREEN ---
 
@@ -336,6 +419,8 @@ func _on_leave_shop_pressed() -> void:
 	GameManager.leave_shop()
 
 func _on_run_over(final_encounter: int) -> void:
+	if final_encounter > best_encounter:
+		best_encounter = final_encounter
 	result_label.text = "RUN OVER"
 	damage_info_label.text = "Reached encounter %d" % final_encounter
 	continue_button.visible = false

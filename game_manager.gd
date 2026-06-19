@@ -335,6 +335,10 @@ func _end_match(winner: String) -> void:
 	if damage > 0:
 		take_damage(damage)
 
+	if player_hp <= 0:
+		run_active = false
+		run_over.emit(encounter_number)
+
 	match_ended.emit(winner, damage)
 
 func take_damage(amount: int) -> void:
