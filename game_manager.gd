@@ -35,8 +35,9 @@ signal dial_changed(new_value)
 signal overheat_changed(new_value)
 signal status_changed(traction, bleed, is_locked)
 signal dealer_intent_telegraphed(intent_text)
-signal hand_drawn(fresh_cards: Array) # Fixed name alignment here
-signal game_over(winner) # Outputs "PLAYER" or "DEALER"
+signal hand_drawn(fresh_cards: Array)
+signal game_over(winner)
+signal deck_counts_changed(deck_size: int, discard_size: int)
 
 func start_match() -> void:
 	# 1. Reset all the basic stats to zero
@@ -274,9 +275,9 @@ func draw_hand(amount: int = 3) -> void:
 			hand.append(drawn_card)
 			
 	print("Hand drawn: ", hand, " | Remaining Deck: ", deck.size(), " | Discard: ", discard_pile.size())
-	
-	# Send the updated hand array up to main.gd
+
 	hand_drawn.emit(hand)
+	deck_counts_changed.emit(deck.size(), discard_pile.size())
 
 func recycle_discard_into_deck() -> void:
 	print("--- Deck empty! Shuffling discard pile back into deck. ---")
@@ -289,6 +290,7 @@ func discard_card_from_hand(card_id: String) -> void:
 	if index != -1:
 		hand.remove_at(index)
 		discard_pile.append(card_id)
+		deck_counts_changed.emit(deck.size(), discard_pile.size())
 
 func unlock_magic_card(card_id: String) -> void:
 	if card_id not in unlocked_magic_cards:

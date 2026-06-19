@@ -5,13 +5,13 @@
 [ext_resource type="Theme" path="res://game_theme.tres" id="theme"]
 
 [sub_resource type="StyleBoxFlat" id="dealer_panel"]
-bg_color = Color(0.1, 0.06, 0.04, 0.8)
+bg_color = Color(0.1, 0.06, 0.04, 0.9)
 border_width_bottom = 2
 border_color = Color(0.5, 0.3, 0.1, 0.8)
 content_margin_left = 20.0
-content_margin_top = 10.0
+content_margin_top = 12.0
 content_margin_right = 20.0
-content_margin_bottom = 10.0
+content_margin_bottom = 12.0
 
 [sub_resource type="StyleBoxFlat" id="table_panel"]
 bg_color = Color(0.0, 0.0, 0.0, 0.0)
@@ -21,13 +21,41 @@ content_margin_right = 16.0
 content_margin_bottom = 8.0
 
 [sub_resource type="StyleBoxFlat" id="player_panel"]
-bg_color = Color(0.08, 0.05, 0.03, 0.85)
+bg_color = Color(0.08, 0.05, 0.03, 0.92)
 border_width_top = 2
 border_color = Color(0.5, 0.3, 0.1, 0.8)
 content_margin_left = 16.0
 content_margin_top = 10.0
 content_margin_right = 16.0
 content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="dial_panel"]
+bg_color = Color(0.12, 0.08, 0.04, 0.7)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.6, 0.4, 0.15, 0.6)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 24.0
+content_margin_top = 12.0
+content_margin_right = 24.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="hp_bar_bg"]
+bg_color = Color(0.15, 0.1, 0.05, 0.8)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.3, 0.1, 0.6)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -48,6 +76,17 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.12, 0.08, 0.06, 1)
 
+[node name="BackgroundArt" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+modulate = Color(0.6, 0.5, 0.4, 0.3)
+
 [node name="GameBoard" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -63,23 +102,11 @@ theme_override_styles/panel = SubResource("dealer_panel")
 
 [node name="DealerContent" type="HBoxContainer" parent="GameBoard/DealerZone"]
 layout_mode = 2
-theme_override_constants/separation = 24
+theme_override_constants/separation = 16
 
-[node name="DealerCards" type="HBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
+[node name="DealerPortrait" type="TextureRect" parent="GameBoard/DealerZone/DealerContent"]
+custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
-theme_override_constants/separation = -20
-
-[node name="DealerCard1" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(48, 72)
-layout_mode = 2
-texture = ExtResource("card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="DealerCard2" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
-custom_minimum_size = Vector2(48, 72)
-layout_mode = 2
-texture = ExtResource("card_back")
 expand_mode = 1
 stretch_mode = 5
 
@@ -105,6 +132,24 @@ theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.6, 0.7, 0.9, 1)
 text = ""
 
+[node name="DealerCards" type="HBoxContainer" parent="GameBoard/DealerZone/DealerContent"]
+layout_mode = 2
+theme_override_constants/separation = -20
+
+[node name="DealerCard1" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
+custom_minimum_size = Vector2(48, 72)
+layout_mode = 2
+texture = ExtResource("card_back")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DealerCard2" type="TextureRect" parent="GameBoard/DealerZone/DealerContent/DealerCards"]
+custom_minimum_size = Vector2(48, 72)
+layout_mode = 2
+texture = ExtResource("card_back")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="TableZone" type="PanelContainer" parent="GameBoard"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -113,19 +158,46 @@ theme_override_styles/panel = SubResource("table_panel")
 [node name="TableContent" type="VBoxContainer" parent="GameBoard/TableZone"]
 layout_mode = 2
 alignment = 1
+theme_override_constants/separation = 4
 
-[node name="DialLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
+[node name="DialContainer" type="PanelContainer" parent="GameBoard/TableZone/TableContent"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 64
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("dial_panel")
+
+[node name="DialInner" type="VBoxContainer" parent="GameBoard/TableZone/TableContent/DialContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="DialLabel" type="Label" parent="GameBoard/TableZone/TableContent/DialContainer/DialInner"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 72
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
 text = "0"
 horizontal_alignment = 1
 
-[node name="DialSubLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
+[node name="DialSubLabel" type="Label" parent="GameBoard/TableZone/TableContent/DialContainer/DialInner"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.5, 0.4, 0.3, 1)
 text = "D I A L"
+horizontal_alignment = 1
+
+[node name="DialBar" type="PanelContainer" parent="GameBoard/TableZone/TableContent"]
+custom_minimum_size = Vector2(400, 20)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("hp_bar_bg")
+
+[node name="DialBarFill" type="ColorRect" parent="GameBoard/TableZone/TableContent/DialBar"]
+layout_mode = 2
+color = Color(1, 0.85, 0.3, 0.8)
+
+[node name="DialRangeLabel" type="Label" parent="GameBoard/TableZone/TableContent"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.4, 0.35, 0.25, 1)
+text = "-21 ←——————————→ +21"
 horizontal_alignment = 1
 
 [node name="PlayerZone" type="PanelContainer" parent="GameBoard"]
@@ -140,11 +212,24 @@ theme_override_constants/separation = 6
 [node name="PlayerStats" type="HBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 layout_mode = 2
 alignment = 1
+theme_override_constants/separation = 24
 
 [node name="OverheatLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.5, 0.3, 1)
 text = "Overheat: 0"
+
+[node name="DeckCountLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.6, 0.55, 0.4, 1)
+text = "Deck: 11"
+
+[node name="DiscardCountLabel" type="Label" parent="GameBoard/PlayerZone/PlayerContent/PlayerStats"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.6, 0.55, 0.4, 1)
+text = "Discard: 0"
 
 [node name="HandContainer" type="HBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 layout_mode = 2
