@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CardData" format=3 uid="uid://bp1k2w4kf4646"]
+
+[ext_resource type="Script" uid="uid://6hertqkplbbs" path="res://CardData.gd" id="1_xppv1"]
+[ext_resource type="Texture2D" uid="uid://bp36shpny4rdy" path="res://Assets/Pixel Fantasy Playing Cards/Playing Cards/card-clubs-1.png" id="2_i2v3i"]
+
+[resource]
+script = ExtResource("1_xppv1")
+texture = ExtResource("2_i2v3i")
+metadata/_custom_type_script = "uid://6hertqkplbbs"
