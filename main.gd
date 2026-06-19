@@ -11,6 +11,7 @@ extends Control
 @onready var hp_label = $GameBoard/PlayerZone/PlayerContent/PlayerStats/HPLabel
 @onready var gold_label = $GameBoard/PlayerZone/PlayerContent/PlayerStats/GoldLabel
 @onready var encounter_label = $GameBoard/DealerZone/DealerContent/DealerInfo/EncounterLabel
+@onready var dealer_title = $GameBoard/DealerZone/DealerContent/DealerInfo/DealerTitle
 @onready var announcement_label = $GameBoard/TableZone/TableContent/AnnouncementLabel
 @onready var dealer_sprite = $GameBoard/TableZone/TableContent/DealerSprite
 @onready var turn_banner = $GameBoard/TableZone/TableContent/TurnBanner
@@ -57,6 +58,7 @@ func _ready() -> void:
 	GameManager.run_over.connect(_on_run_over)
 	GameManager.action_announced.connect(_on_action_announced)
 	GameManager.dealer_anim_requested.connect(_on_dealer_anim_requested)
+	GameManager.dealer_changed.connect(_on_dealer_changed)
 	GameManager.turn_phase_changed.connect(_on_turn_phase_changed)
 	continue_button.pressed.connect(_on_continue_pressed)
 	restart_run_button.pressed.connect(_on_restart_run_pressed)
@@ -101,6 +103,11 @@ func _show_turn_banner(is_player_turn: bool) -> void:
 
 func _on_end_turn_pressed() -> void:
 	GameManager.manual_end_turn()
+
+func _on_dealer_changed(dealer_data: Dictionary) -> void:
+	dealer_title.text = dealer_data.name.to_upper()
+	if dealer_sprite.has_method("load_dealer"):
+		dealer_sprite.load_dealer(dealer_data)
 
 func _on_dealer_anim_requested(anim_name: String) -> void:
 	if dealer_sprite.has_method("play_oneshot") and anim_name != "IDLE":

@@ -16,6 +16,7 @@ var dealer_bleed: int = 0
 var dealer_is_locked: bool = false
 var next_card_multiplier: float = 1.0
 var current_dealer_intent: Dictionary = {}
+var current_dealer: Dictionary = {}
 var match_active: bool = false
 var is_resolving: bool = false
 var pending_effects: Array[Dictionary] = []
@@ -60,6 +61,7 @@ signal run_over(final_encounter: int)
 signal action_announced(text: String)
 signal dealer_anim_requested(anim_name: String)
 signal turn_phase_changed(is_player_turn: bool)
+signal dealer_changed(dealer_data: Dictionary)
 
 func start_run() -> void:
 	player_hp = max_hp
@@ -93,7 +95,9 @@ func start_match() -> void:
 	discard_pile.clear()
 	deck.shuffle()
 
-	action_announced.emit("Encounter %d — Fight!" % encounter_number)
+	current_dealer = DealerAI.get_dealer_for_encounter(encounter_number)
+	dealer_changed.emit(current_dealer)
+	action_announced.emit("Encounter %d — %s!" % [encounter_number, current_dealer.name])
 	dealer_anim_requested.emit("IDLE")
 	prepare_next_dealer_intent()
 	draw_hand(3)
@@ -301,7 +305,7 @@ func resolve_pending_effects() -> void:
 	pending_effects = still_pending
 
 func prepare_next_dealer_intent() -> void:
-	current_dealer_intent = DealerAI.select_next_move(dial_value)
+	current_dealer_intent = DealerAI.select_next_move(dial_value, current_dealer)
 	dealer_intent_telegraphed.emit(current_dealer_intent.intent_text)
 
 func check_win_condition() -> bool:
