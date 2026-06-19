@@ -280,6 +280,13 @@ layout_mode = 2
 alignment = 1
 theme_override_constants/separation = 12
 
+[node name="EndTurnButton" type="Button" parent="GameBoard/PlayerZone/PlayerContent"]
+visible = false
+custom_minimum_size = Vector2(160, 40)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "End Turn"
+
 [node name="MatchEndContainer" type="VBoxContainer" parent="GameBoard/PlayerZone/PlayerContent"]
 visible = false
 layout_mode = 2

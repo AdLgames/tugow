@@ -59,6 +59,7 @@ signal shop_opened(shop_items: Array)
 signal run_over(final_encounter: int)
 signal action_announced(text: String)
 signal dealer_anim_requested(anim_name: String)
+signal turn_phase_changed(is_player_turn: bool)
 
 func start_run() -> void:
 	player_hp = max_hp
@@ -96,12 +97,12 @@ func start_match() -> void:
 	dealer_anim_requested.emit("IDLE")
 	prepare_next_dealer_intent()
 	draw_hand(3)
+	turn_phase_changed.emit(true)
 
 func play_card(card_id: String) -> void:
 	if not match_active or is_resolving:
 		return
 	if not CardDatabase.CARDS.has(card_id):
-		push_error("Card ID not found in database: " + card_id)
 		return
 
 	is_resolving = true
@@ -191,13 +192,19 @@ func play_card(card_id: String) -> void:
 	if check_win_condition():
 		return
 
-	if card.get("free_action", false):
-		action_announced.emit("Free action — play again!")
+	# Hand empty → auto end turn after a brief pause
+	if hand.is_empty():
+		await get_tree().create_timer(0.5).timeout
+		await end_player_turn()
+	else:
 		is_resolving = false
+
+func manual_end_turn() -> void:
+	if not match_active or is_resolving:
 		return
-
-	await get_tree().create_timer(0.8).timeout
-
+	is_resolving = true
+	turn_phase_changed.emit(false)
+	await get_tree().create_timer(0.3).timeout
 	await end_player_turn()
 
 func move_dial(amount: int) -> void:
@@ -205,11 +212,12 @@ func move_dial(amount: int) -> void:
 	dial_changed.emit(dial_value)
 
 func end_player_turn() -> void:
+	turn_phase_changed.emit(false)
 	if player_overheat > 0:
-		var slip_amount = player_overheat * 2
+		var slip_amount = player_overheat
 		action_announced.emit("Overheat backlash: -%d!" % slip_amount)
 		move_dial(-slip_amount)
-		await get_tree().create_timer(0.6).timeout
+		await get_tree().create_timer(0.5).timeout
 
 	if check_win_condition():
 		return
@@ -250,7 +258,7 @@ func execute_dealer_move() -> void:
 			action_announced.emit("Pulls -%d!" % final_pull)
 
 	elif move.type == DealerAI.MoveType.SABOTAGE:
-		var sabotage_amount = 2 + int((encounter_number - 1) / 3)
+		var sabotage_amount = 1 + int((encounter_number - 1) / 3)
 		player_overheat += sabotage_amount
 		overheat_changed.emit(player_overheat)
 		action_announced.emit("Sabotage! Overheat +%d" % sabotage_amount)
@@ -274,6 +282,7 @@ func start_new_round() -> void:
 		return
 	prepare_next_dealer_intent()
 	draw_hand(3)
+	turn_phase_changed.emit(true)
 	is_resolving = false
 
 func resolve_pending_effects() -> void:
@@ -307,6 +316,7 @@ func check_win_condition() -> bool:
 func _end_match(winner: String) -> void:
 	match_active = false
 	is_resolving = false
+	turn_phase_changed.emit(false)
 	var damage: int = 0
 	if winner == "PLAYER":
 		damage = player_overheat
@@ -315,7 +325,7 @@ func _end_match(winner: String) -> void:
 		gold_changed.emit(gold)
 		dealer_anim_requested.emit("DEATH")
 	else:
-		damage = 8 + encounter_number * 2
+		damage = 5 + encounter_number * 2
 		dealer_anim_requested.emit("FLYING")
 
 	if damage > 0:
@@ -384,7 +394,7 @@ func advance_encounter() -> void:
 	start_match()
 
 func get_difficulty_modifier() -> float:
-	return 1.0 + (encounter_number - 1) * 0.15
+	return 1.0 + (encounter_number - 1) * 0.1
 
 func draw_hand(amount: int = 3) -> void:
 	for card in hand:

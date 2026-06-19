@@ -16,6 +16,7 @@ extends Control
 
 const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var hand_container = $GameBoard/PlayerZone/PlayerContent/HandContainer
+@onready var end_turn_button = $GameBoard/PlayerZone/PlayerContent/EndTurnButton
 @onready var match_end_container = $GameBoard/PlayerZone/PlayerContent/MatchEndContainer
 @onready var result_label = $GameBoard/PlayerZone/PlayerContent/MatchEndContainer/ResultLabel
 @onready var damage_info_label = $GameBoard/PlayerZone/PlayerContent/MatchEndContainer/DamageInfoLabel
@@ -53,10 +54,12 @@ func _ready() -> void:
 	GameManager.run_over.connect(_on_run_over)
 	GameManager.action_announced.connect(_on_action_announced)
 	GameManager.dealer_anim_requested.connect(_on_dealer_anim_requested)
+	GameManager.turn_phase_changed.connect(_on_turn_phase_changed)
 	continue_button.pressed.connect(_on_continue_pressed)
 	restart_run_button.pressed.connect(_on_restart_run_pressed)
 	skip_reward_button.pressed.connect(_on_skip_reward_pressed)
 	leave_shop_button.pressed.connect(_on_leave_shop_pressed)
+	end_turn_button.pressed.connect(_on_end_turn_pressed)
 	_load_art_assets()
 	GameManager.start_run()
 
@@ -72,6 +75,12 @@ func _on_action_announced(text: String) -> void:
 	announce_tween = create_tween()
 	announce_tween.tween_interval(2.0)
 	announce_tween.tween_property(announcement_label, "modulate:a", 0.0, 0.5)
+
+func _on_turn_phase_changed(is_player_turn: bool) -> void:
+	end_turn_button.visible = is_player_turn
+
+func _on_end_turn_pressed() -> void:
+	GameManager.manual_end_turn()
 
 func _on_dealer_anim_requested(anim_name: String) -> void:
 	if dealer_sprite.has_method("play_oneshot") and anim_name != "IDLE":
