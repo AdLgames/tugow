@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://corhw50u5ar8t"]
+
+[ext_resource type="Script" uid="uid://8r7eabu7oll3" path="res://main.gd" id="1_ig7tw"]
+[ext_resource type="Texture2D" uid="uid://b4k2a0vb0a5fh" path="res://Assets/Pixel Fantasy Playing Cards/Playing Cards/card-clubs-9.png" id="2_h2yge"]
+[ext_resource type="Texture2D" uid="uid://b6tcsxf535nbx" path="res://Assets/Pixel Fantasy Playing Cards/Playing Cards/card-back2.png" id="3_1bvp3"]
+
+[node name="Main" type="Node2D" unique_id=1890750719]
+script = ExtResource("1_ig7tw")
+
+[node name="UI_Layout" type="VBoxContainer" parent="." unique_id=240951712]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_right = 1152.0
+offset_bottom = 648.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="DialLabel" type="Label" parent="UI_Layout" unique_id=898971013]
+layout_mode = 2
+text = "0"
+horizontal_alignment = 1
+
+[node name="OverheatLabel" type="Label" parent="UI_Layout" unique_id=2107376671]
+layout_mode = 2
+text = "Overheat"
+
+[node name="IntentLabel" type="Label" parent="UI_Layout" unique_id=52322890]
+layout_mode = 2
+text = "Intent"
+
+[node name="StatusLabel" type="Label" parent="UI_Layout" unique_id=1800460076]
+layout_mode = 2
+text = "Status"
+
+[node name="HandContainer" type="HBoxContainer" parent="UI_Layout" unique_id=1278269144]
+custom_minimum_size = Vector2(0, 180)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="CardClubs9" type="Sprite2D" parent="UI_Layout" unique_id=891319942]
+position = Vector2(349, 492)
+texture = ExtResource("2_h2yge")
+
+[node name="CardBack2" type="Sprite2D" parent="UI_Layout" unique_id=1217994107]
+position = Vector2(494, 488)
+texture = ExtResource("3_1bvp3")

@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://cemrfj2sth3m1"]
+
+[ext_resource type="Script" uid="uid://cfm55t4qdg624" path="res://card_ui.gd" id="1_gf2xd"]
+
+[node name="CardUI" type="Control" unique_id=687337764]
+custom_minimum_size = Vector2(120, 160)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -1032.0
+offset_bottom = -488.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_gf2xd")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1851713431]
+layout_mode = 0
+offset_right = 120.0
+offset_bottom = 160.0
+color = Color(0.6225118, 0.41678265, 0, 1)
+
+[node name="NameLabel" type="Label" parent="." unique_id=2050810812]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="DescriptionLabel" type="Label" parent="." unique_id=1399725359]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
