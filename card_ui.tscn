@@ -3,19 +3,23 @@
 [ext_resource type="Script" uid="uid://cfm55t4qdg624" path="res://card_ui.gd" id="1_gf2xd"]
 
 [sub_resource type="StyleBoxFlat" id="card_bg"]
-bg_color = Color(0.15, 0.1, 0.06, 0.85)
+bg_color = Color(0.12, 0.08, 0.04, 0.92)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
 border_color = Color(0.45, 0.3, 0.12, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
 
 [node name="CardUI" type="PanelContainer"]
-custom_minimum_size = Vector2(150, 225)
+custom_minimum_size = Vector2(130, 190)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -29,7 +33,7 @@ theme_override_constants/separation = 2
 
 [node name="NameLabel" type="Label" parent="CardLayout"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(1, 0.9, 0.65, 1)
 horizontal_alignment = 1
 
@@ -40,10 +44,10 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="DescriptionLabel" type="Label" parent="CardLayout"]
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-theme_override_font_sizes/font_size = 9
-theme_override_colors/font_color = Color(0.8, 0.7, 0.5, 1)
+theme_override_font_sizes/font_size = 8
+theme_override_colors/font_color = Color(0.75, 0.65, 0.45, 1)
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2

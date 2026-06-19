@@ -13,6 +13,8 @@ extends Control
 @onready var encounter_label = $GameBoard/DealerZone/DealerContent/DealerInfo/EncounterLabel
 @onready var announcement_label = $GameBoard/TableZone/TableContent/AnnouncementLabel
 @onready var dealer_sprite = $GameBoard/TableZone/TableContent/DealerSprite
+@onready var turn_banner = $GameBoard/TableZone/TableContent/TurnBanner
+@onready var turn_banner_label = $GameBoard/TableZone/TableContent/TurnBanner/TurnBannerLabel
 
 const CARD_UI_SCENE = preload("res://card_ui.tscn")
 @onready var hand_container = $GameBoard/PlayerZone/PlayerContent/HandContainer
@@ -37,6 +39,7 @@ const BG_ART_PATH = "res://Assets/TavernAssets/1781874905946.png"
 
 var last_winner: String = ""
 var announce_tween: Tween
+var banner_tween: Tween
 
 func _ready() -> void:
 	GameManager.dial_changed.connect(_on_dial_changed)
@@ -78,6 +81,23 @@ func _on_action_announced(text: String) -> void:
 
 func _on_turn_phase_changed(is_player_turn: bool) -> void:
 	end_turn_button.visible = is_player_turn
+	_show_turn_banner(is_player_turn)
+
+func _show_turn_banner(is_player_turn: bool) -> void:
+	if is_player_turn:
+		turn_banner_label.text = "YOUR TURN"
+		turn_banner_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5, 1))
+	else:
+		turn_banner_label.text = "DEALER'S TURN"
+		turn_banner_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.3, 1))
+	turn_banner.visible = true
+	turn_banner.modulate.a = 1.0
+	if banner_tween and banner_tween.is_running():
+		banner_tween.kill()
+	banner_tween = create_tween()
+	banner_tween.tween_interval(1.5)
+	banner_tween.tween_property(turn_banner, "modulate:a", 0.0, 0.4)
+	banner_tween.tween_callback(func(): turn_banner.visible = false)
 
 func _on_end_turn_pressed() -> void:
 	GameManager.manual_end_turn()
