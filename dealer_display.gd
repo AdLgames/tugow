@@ -6,7 +6,7 @@ const FRAME_HEIGHT = 69
 
 var sprite_sheets: Dictionary = {}
 var atlas_texture: AtlasTexture
-var current_anim: String = "IDLE"
+var current_anim: String = ""
 var frame_count: int = 1
 var current_frame: int = 0
 var anim_speed: float = 10.0

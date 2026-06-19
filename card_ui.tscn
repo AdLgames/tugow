@@ -13,13 +13,13 @@ corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
-content_margin_left = 4.0
-content_margin_top = 4.0
-content_margin_right = 4.0
-content_margin_bottom = 4.0
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
 
 [node name="CardUI" type="PanelContainer"]
-custom_minimum_size = Vector2(130, 190)
+custom_minimum_size = Vector2(260, 380)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -29,11 +29,11 @@ script = ExtResource("1_gf2xd")
 
 [node name="CardLayout" type="VBoxContainer" parent="."]
 layout_mode = 2
-theme_override_constants/separation = 2
+theme_override_constants/separation = 4
 
 [node name="NameLabel" type="Label" parent="CardLayout"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(1, 0.9, 0.65, 1)
 horizontal_alignment = 1
 
@@ -44,9 +44,9 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="DescriptionLabel" type="Label" parent="CardLayout"]
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 70)
 layout_mode = 2
-theme_override_font_sizes/font_size = 8
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.75, 0.65, 0.45, 1)
 horizontal_alignment = 1
 vertical_alignment = 1
