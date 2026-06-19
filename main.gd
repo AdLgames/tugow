@@ -59,7 +59,17 @@ func _on_hand_drawn(fresh_cards: Array) -> void:
 
 
 func _on_game_over(winner: String) -> void:
-	if winner == "PLAYER":
-		print("UI Display: Victory Screen Displayed!")
-	else:
-		print("UI Display: Defeat Screen Displayed!")
+	for child in hand_container.get_children():
+		child.queue_free()
+
+	var label = Label.new()
+	label.text = "VICTORY!" if winner == "PLAYER" else "DEFEAT!"
+	hand_container.add_child(label)
+
+	var restart_btn = Button.new()
+	restart_btn.text = "Play Again"
+	restart_btn.pressed.connect(_on_restart_pressed)
+	hand_container.add_child(restart_btn)
+
+func _on_restart_pressed() -> void:
+	GameManager.start_match()

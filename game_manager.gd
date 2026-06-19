@@ -9,6 +9,8 @@ var dealer_is_locked: bool = false
 var next_card_multiplier: float = 1.0
 
 var current_dealer_intent: Dictionary = {}
+var match_active: bool = false
+var pending_effects: Array[Dictionary] = []
 
 # --- DECK MANAGEMENT STATE ---
 var deck: Array[String] = []
@@ -32,9 +34,6 @@ signal dealer_intent_telegraphed(intent_text)
 signal hand_drawn(fresh_cards: Array) # Fixed name alignment here
 signal game_over(winner) # Outputs "PLAYER" or "DEALER"
 
-func _ready() -> void:
-	randomize()
-
 func start_match() -> void:
 	# 1. Reset all the basic stats to zero
 	dial_value = 0
@@ -43,6 +42,8 @@ func start_match() -> void:
 	dealer_bleed = 0
 	dealer_is_locked = false
 	next_card_multiplier = 1.0
+	match_active = true
+	pending_effects.clear()
 	
 	# 2. Tell the UI to update its basic displays
 	dial_changed.emit(dial_value)
@@ -55,6 +56,8 @@ func start_match() -> void:
 	draw_hand(3)                 
 
 func play_card(card_id: String) -> void:
+	if not match_active:
+		return
 	if not CardDatabase.CARDS.has(card_id):
 		push_error("Card ID not found in database: " + card_id)
 		return
@@ -97,7 +100,7 @@ func play_card(card_id: String) -> void:
 			
 		"CONDITIONAL_PUSH":
 			var target_mod = card.get("target_mod", 1)
-			if dial_value % target_mod == 0:
+			if dial_value != 0 and dial_value % target_mod == 0:
 				var bonus = card.get("bonus_val", 0)
 				print("Sweet Spot Hit! Bonus +", bonus)
 				move_dial(resolved_value + bonus)
@@ -112,6 +115,17 @@ func play_card(card_id: String) -> void:
 				print("Precision Placement! Bonus +", bonus)
 				move_dial(bonus)
 				
+		"DELAY_PUSH":
+			var delay = card.get("delay_turns", 1)
+			pending_effects.append({
+				"action": "PUSH",
+				"base_val": card.base_val,
+				"variance": card.variance,
+				"turns_left": delay,
+				"name": card.name
+			})
+			print("Winding up: ", card.name, " fires in ", delay, " turn(s).")
+
 		"BLEED":
 			dealer_bleed += card.get("stacks", 0)
 			status_changed.emit(dealer_traction, dealer_bleed, dealer_is_locked)
@@ -199,8 +213,24 @@ func execute_dealer_move() -> void:
 
 func start_new_round() -> void:
 	print("--- STARTING NEW ROUND ---")
+	resolve_pending_effects()
+	if check_win_condition(): return
 	prepare_next_dealer_intent()
 	draw_hand(3)
+
+func resolve_pending_effects() -> void:
+	var still_pending: Array[Dictionary] = []
+	for effect in pending_effects:
+		effect.turns_left -= 1
+		if effect.turns_left <= 0:
+			var roll: int = effect.base_val
+			if effect.variance > 0:
+				roll += randi_range(-effect.variance, effect.variance)
+			print("Delayed effect triggers: ", effect.name, " for +", roll)
+			move_dial(roll)
+		else:
+			still_pending.append(effect)
+	pending_effects = still_pending
 
 func prepare_next_dealer_intent() -> void:
 	current_dealer_intent = DealerAI.select_next_move(dial_value)
@@ -208,9 +238,11 @@ func prepare_next_dealer_intent() -> void:
 
 func check_win_condition() -> bool:
 	if dial_value >= 21:
+		match_active = false
 		game_over.emit("PLAYER")
 		return true
 	elif dial_value <= -21:
+		match_active = false
 		game_over.emit("DEALER")
 		return true
 	return false
