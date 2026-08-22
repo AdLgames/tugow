@@ -1,31 +1,35 @@
 ; Engine configuration file.
-; It's best edited using the editor UI and not directly,
-; since the parameters that go here are not all obvious.
-;
-; Format:
-;   [section] ; section goes between []
-;   param=value ; assign values to parameters
+; Thirteen Boxes — a dice roguelike where the scorecard is your health bar.
 
 config_version=5
 
 [application]
 
-config/name="TugOfWarBJ"
-run/main_scene="uid://corhw50u5ar8t"
-config/features=PackedStringArray("4.7", "GL Compatibility")
+config/name="Thirteen Boxes"
+config/description="A dice roguelike where the scorecard is your health bar."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]
 
-GameManager="*uid://cfdjl06l37dmg"
-CardDatabase="*uid://nts016eprp6"
+Balance="*res://scripts/autoload/balance.gd"
+Steam="*res://scripts/autoload/steam_manager.gd"
+RunState="*res://scripts/autoload/run_state.gd"
 
-[physics]
+[display]
 
-3d/physics_engine="Jolt Physics"
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[dotnet]
+
+project/assembly_name="ThirteenBoxes"
 
 [rendering]
 
-rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
