@@ -1,0 +1,16 @@
+# Godot 4+
+.godot/
+/android/
+export.cfg
+/build/
+/dist/
+*.translation
+
+# Steam
+steam_api*.dll
+libsteam_api.*
+steam_api*.lib
+
+# OS / editor
+.DS_Store
+*.swp
