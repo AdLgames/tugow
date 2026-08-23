@@ -12,6 +12,8 @@ var _progress_bar: ProgressBar
 var _boxes_label: Label
 var _dice_row: HBoxContainer
 var _pool_label: Label
+var _throw_buttons: Array[Button] = []
+var _table_view: TableView
 var _roll_button: Button
 var _hint_label: Label
 var _box_rows: Array[Button] = []
@@ -160,9 +162,8 @@ func _build_table() -> Control:
 	heading.add_theme_color_override("font_color", ThemeColors.INK)
 	column.add_child(heading)
 
-	var spacer_top := Control.new()
-	spacer_top.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(spacer_top)
+	_table_view = TableView.new()
+	column.add_child(_table_view)
 
 	_dice_row = HBoxContainer.new()
 	_dice_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -180,11 +181,17 @@ func _build_table() -> Control:
 	controls.add_theme_constant_override("separation", 12)
 	column.add_child(controls)
 
-	_roll_button = Button.new()
-	_roll_button.custom_minimum_size = Vector2(200, 42)
-	_roll_button.text = "Roll"
-	_roll_button.pressed.connect(_on_roll_pressed)
-	controls.add_child(_roll_button)
+	# Throw strength is a per-turn decision, so it is three buttons, not a setting.
+	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(150, 44)
+		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
+		button.pressed.connect(_on_throw_pressed.bind(strength))
+		button.mouse_entered.connect(_on_throw_hovered.bind(strength))
+		controls.add_child(button)
+		_throw_buttons.append(button)
+	# Kept as the state readout the tests and the smoke run drive.
+	_roll_button = _throw_buttons[Throw.Strength.MEDIUM]
 
 	_hint_label = Label.new()
 	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -192,10 +199,6 @@ func _build_table() -> Control:
 	_hint_label.custom_minimum_size = Vector2(0, 44)
 	_hint_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
 	column.add_child(_hint_label)
-
-	var spacer_bottom := Control.new()
-	spacer_bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(spacer_bottom)
 
 	return panel
 
@@ -300,8 +303,8 @@ func _start_run() -> void:
 
 
 func _on_floor_cleared(_floor_number: int, _reclaimed: Array) -> void:
-	if game.phase == Game.Phase.FORGE:
-		_show_forge()
+	if game.phase == Game.Phase.BENCH:
+		_show_bench()
 
 
 func _on_run_ended(won: bool, reason: String) -> void:
@@ -327,12 +330,12 @@ func _on_run_ended(won: bool, reason: String) -> void:
 	_set_overlay_visible(true)
 
 
-# --- The forge ---------------------------------------------------------------
+# --- The bench ---------------------------------------------------------------
 
-func _show_forge() -> void:
+func _show_bench() -> void:
 	_pending_offer = {}
 	_pending_sacrifices.clear()
-	_clear_overlay("THE FORGE")
+	_clear_overlay("THE BENCH")
 	_overlay_text("Floor %d cleared in %d turns. The only currency is your scorecard: %d boxes left."
 		% [game.floor_number, game.floor_turn, game.card.open_count()])
 	if game.pending_carry > 0:
@@ -342,19 +345,19 @@ func _show_forge() -> void:
 		charm_names.append(c.charm_name)
 	if not charm_names.is_empty():
 		_overlay_text("Charms: %s" % ", ".join(charm_names))
-	for offer in Forge.offers(game):
-		var affordable: bool = Forge.can_afford(game, int(offer["cost"]))
+	for offer in Bench.offers(game):
+		var affordable: bool = Bench.can_afford(game, int(offer["cost"]))
 		var label := "%s — %d box%s\n%s" % [
 			offer["label"], int(offer["cost"]),
 			"" if int(offer["cost"]) == 1 else "es", offer["detail"],
 		]
-		var button := _overlay_button(label, _on_forge_offer.bind(offer))
+		var button := _overlay_button(label, _on_bench_offer.bind(offer))
 		button.disabled = not affordable
-	_overlay_button("Descend to floor %d" % (game.floor_number + 1), _leave_forge)
+	_overlay_button("Descend to floor %d" % (game.floor_number + 1), _leave_bench)
 	_set_overlay_visible(true)
 
 
-func _on_forge_offer(offer: Dictionary) -> void:
+func _on_bench_offer(offer: Dictionary) -> void:
 	_pending_offer = offer
 	_pending_sacrifices.clear()
 	_ask_for_sacrifice()
@@ -374,47 +377,53 @@ func _ask_for_sacrifice() -> void:
 		_overlay_button("%s — %s" % [Scoring.box_name(box), Scoring.box_rule(box)], func() -> void:
 			_pending_sacrifices.append(box)
 			_ask_for_sacrifice())
-	_overlay_button("Never mind", _show_forge)
+	_overlay_button("Never mind", _show_bench)
 
 
 func _ask_for_target() -> void:
 	var target: String = _pending_offer["target"]
 	match target:
 		"none":
-			_apply_forge(-1)
+			_apply_bench(-1)
 		"die":
 			_clear_overlay("Which die?")
 			for d in game.pool.dice:
-				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_forge.bind(d.id))
-			_overlay_button("Never mind", _show_forge)
+				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_bench.bind(d.id))
+			_overlay_button("Never mind", _show_bench)
 		"bitter_die":
 			_clear_overlay("Which bitter die?")
 			for d in game.pool.dice:
 				if d.bitter:
-					_overlay_button(d.die_name, _apply_forge.bind(d.id))
-			_overlay_button("Never mind", _show_forge)
+					_overlay_button(d.die_name, _apply_bench.bind(d.id))
+			_overlay_button("Never mind", _show_bench)
 		"filled_box":
 			_clear_overlay("Which box do you hate?")
 			for box in game.card.player_boxes():
-				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_forge.bind(box))
-			_overlay_button("Never mind", _show_forge)
+				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_bench.bind(box))
+			_overlay_button("Never mind", _show_bench)
 
 
-func _apply_forge(target: int) -> void:
-	Forge.apply(game, _pending_offer["id"], _pending_sacrifices, target)
-	_show_forge()
+func _apply_bench(target: int) -> void:
+	Bench.apply(game, _pending_offer["id"], _pending_sacrifices, target)
+	_show_bench()
 
 
-func _leave_forge() -> void:
+func _leave_bench() -> void:
 	_set_overlay_visible(false)
-	game.leave_forge()
+	game.leave_bench()
 	_refresh()
 
 
 # --- Input -------------------------------------------------------------------
 
-func _on_roll_pressed() -> void:
-	game.roll()
+func _on_throw_pressed(strength: int) -> void:
+	game.throw(strength)
+
+
+func _on_throw_hovered(strength: int) -> void:
+	if _table_view != null:
+		_table_view.preview_strength = strength
+		_table_view.queue_redraw()
 
 
 func _on_die_pressed(die: Die) -> void:
@@ -473,6 +482,7 @@ func _refresh() -> void:
 	_progress_bar.value = minf(float(game.floor_score), _progress_bar.max_value)
 	_boxes_label.text = "%d boxes left" % game.card.open_count()
 
+	_table_view.bind(game.pool)
 	_refresh_dice()
 	_refresh_pool()
 	_refresh_card()
@@ -483,18 +493,32 @@ func _refresh() -> void:
 		charm_names.append(c.charm_name)
 	_charm_label.text = "Charms: %s" % ("none yet" if charm_names.is_empty() else ", ".join(charm_names))
 
-	var frozen := game.free_dice_on_table() == 0
-	_roll_button.disabled = game.phase != Game.Phase.TURN or game.rerolls_left <= 0 or frozen
-	if frozen:
-		_roll_button.text = "Every die is locked"
-	elif game.rerolls_left > 0:
-		var free := game.free_dice_on_table()
-		_roll_button.text = "Reroll %d %s (%d left)" % [
-			free, "die" if free == 1 else "dice", game.rerolls_left,
-		]
-	else:
-		_roll_button.text = "No rerolls left"
+	_refresh_throw_buttons()
 	_hint_label.text = _hint()
+
+
+func _refresh_throw_buttons() -> void:
+	var frozen := not game.can_throw()
+	var throws_left := game.rerolls_left
+	var free := game.free_dice_on_table()
+	for strength in _throw_buttons.size():
+		var button := _throw_buttons[strength]
+		button.disabled = game.phase != Game.Phase.TURN or throws_left <= 0 or frozen
+		if frozen:
+			button.text = "Nothing to throw"
+		elif throws_left <= 0:
+			button.text = "No throws left"
+		else:
+			button.text = "%s throw\n%d %s, %d left" % [
+				Throw.strength_name(strength), free,
+				"die" if free == 1 else "dice", throws_left,
+			]
+		var tint := ThemeColors.INK
+		if strength == Throw.Strength.HARD:
+			tint = ThemeColors.ADVERSARY
+		elif strength == Throw.Strength.SOFT:
+			tint = ThemeColors.PLAYER
+		button.add_theme_color_override("font_color", tint)
 
 
 func _refresh_dice() -> void:
@@ -518,7 +542,9 @@ func _refresh_pool() -> void:
 			tags.append("bitter")
 		if Array(d.faces) != [1, 2, 3, 4, 5, 6]:
 			tags.append(str(Array(d.faces)))
-		if d.lock_scores > 0 and not d.locked:
+		if d.lost:
+			tags.append("off the table")
+		if d.lock_scores > 0 and not d.locked and not d.lost:
 			tags.append("%d/%d to facet" % [d.lock_scores % Balance.facet_threshold, Balance.facet_threshold])
 		parts.append(d.die_name if tags.is_empty() else "%s (%s)" % [d.die_name, ", ".join(tags)])
 	_pool_label.text = "THE POOL — %s" % "   ".join(parts)
@@ -612,6 +638,12 @@ func _next_duel_floor() -> int:
 func _hint() -> String:
 	if game.phase != Game.Phase.TURN:
 		return ""
+	var rails := Throw.rail_count(game.pool.table)
+	if rails > 0:
+		return "%d die on the rail: x%.0f on this score, but the next throw shoves it toward the lip. Lock it, or score now."\
+			% [rails, Throw.rail_multiplier(game.pool.table)] if rails == 1 else \
+			"%d dice on the rail: x%.0f on this score, but the next throw shoves them toward the lip."\
+			% [rails, Throw.rail_multiplier(game.pool.table)]
 	if game.adversary != null and game.adversary.declared_box >= 0:
 		return "Deny it by taking %s yourself, or outpace it — you need %d more."\
 			% [Scoring.box_name(game.adversary.declared_box), maxi(0, game.threshold - game.floor_score)]

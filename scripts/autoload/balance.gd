@@ -28,6 +28,37 @@ var overflow_carry_ratio: float = 1.0
 ## turn cannot skip a floor.
 var overflow_carry_cap: float = 0.5
 
+# --- The throw ---------------------------------------------------------------
+
+## How the rail's double stacks with the category operations. Open question
+## #7 — the exponential form is what the spec describes literally; the sweep
+## in tools/curve_report.gd is why the default is not that.
+enum RailMode { EXPONENTIAL, LINEAR, FLAT }
+
+var rail_mode: RailMode = RailMode.LINEAR
+
+## Landing radius band per Throw.Strength: soft never reaches the rail,
+## medium can, hard can go past the lip entirely.
+var throw_bands: Dictionary = {
+	0: Vector2(0.00, 0.45),   # SOFT
+	1: Vector2(0.10, 0.85),   # MEDIUM
+	2: Vector2(0.35, 1.18),   # HARD — about a 1-in-5 chance per die of going off
+}
+
+## How far a die already resting on the rail is shoved by the next throw.
+var rail_push: Dictionary = {
+	0: 0.00,   # SOFT — leaves it alone
+	1: 0.12,   # MEDIUM
+	2: 0.45,   # HARD — usually takes it off the table
+}
+
+var rail_inner_radius: float = 0.60
+## Dice landing closer than this knock each other to new faces.
+var collision_radius: float = 0.18
+## Closer still, and one is resting on the other: cocked.
+var stack_radius: float = 0.05
+var max_collision_chain: int = 12
+
 # --- Dice -------------------------------------------------------------------
 
 var pool_size: int = 8
@@ -44,12 +75,12 @@ var adversary_card_limit: int = 7
 ## Boxes returned to you for out-scoring an Adversary (open question #5).
 var duel_reclaim: int = 3
 
-# --- Forge ------------------------------------------------------------------
+# --- Bench ------------------------------------------------------------------
 
-var forge_costs: Dictionary = {
+var bench_costs: Dictionary = {
 	"reshape_face": 1,
-	"ninth_die": 2,
 	"cleanse_bitter": 1,
+	"ninth_die": 2,
 	"overwrite_box": 1,
 	"take_charm": 1,
 }

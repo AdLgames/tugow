@@ -18,7 +18,7 @@ func _ready() -> void:
 
 	await _shot("01_title")
 	_press("Descend")
-	_main._roll_button.pressed.emit()
+	_main._throw_buttons[Throw.Strength.HARD].pressed.emit()
 	await _shot("02_turn")
 
 	# The confirm overlay: writing a box is irreversible for the whole run.
@@ -26,9 +26,9 @@ func _ready() -> void:
 	await _shot("03_confirm")
 	_press("Write it")
 
-	# Play on until the forge opens.
+	# Play on until the bench opens.
 	var guard := 0
-	while _main.game.phase != Game.Phase.FORGE and guard < 60:
+	while _main.game.phase != Game.Phase.BENCH and guard < 60:
 		guard += 1
 		await _play_one_turn()
 	await _shot("04_forge")
@@ -38,7 +38,7 @@ func _ready() -> void:
 	guard = 0
 	while _main.game.adversary == null and guard < 200:
 		guard += 1
-		if _main.game.phase == Game.Phase.FORGE:
+		if _main.game.phase == Game.Phase.BENCH:
 			_press("Descend to floor")
 			continue
 		if _main.game.phase == Game.Phase.RUN_OVER:
@@ -51,7 +51,7 @@ func _ready() -> void:
 	guard = 0
 	while _main.game.phase != Game.Phase.RUN_OVER and guard < 300:
 		guard += 1
-		if _main.game.phase == Game.Phase.FORGE:
+		if _main.game.phase == Game.Phase.BENCH:
 			_press("Descend to floor")
 			continue
 		await _play_one_turn()
@@ -60,8 +60,9 @@ func _ready() -> void:
 
 
 func _play_one_turn() -> void:
-	if not _main._roll_button.disabled:
-		_main._roll_button.pressed.emit()
+	var button: Button = _main._throw_buttons[_main.game.floor_turn % 3]
+	if not button.disabled:
+		button.pressed.emit()
 	for view in _main._dice_row.get_children():
 		if view is DieView and view.die.value >= 5 and not view.disabled:
 			view.pressed.emit()

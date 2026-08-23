@@ -29,6 +29,32 @@ var lock_scores: int = 0
 ## Set by the Grudge charm when the die rolls a 1.
 var furious: bool = false
 
+# --- Where it landed ---------------------------------------------------------
+
+## Polar position on the table's unit disc: 0 is dead centre, 1.0 is the lip.
+var landing_radius: float = 0.0
+var landing_angle: float = 0.0
+## Throw.Zone — pot, rail, or off the table.
+var zone: int = 0
+## Gone for the rest of the floor.
+var lost: bool = false
+## Id of the die this one is resting on, or -1. A cocked die counts as both
+## its own face and the face beneath it.
+var cocked_on: int = -1
+
+
+func landing_position() -> Vector2:
+	return Vector2(cos(landing_angle), sin(landing_angle)) * landing_radius
+
+
+## Every die has a hidden face opposite the one showing. On a standard die
+## that is 7 - shown; on a reshaped die it is the sum of its lowest and
+## highest face minus the one showing, which keeps the same relationship.
+func underside() -> int:
+	if value <= 0:
+		return 0
+	return maxi(1, lowest_face() + highest_face() - value)
+
 var _rng: RandomNumberGenerator
 
 
@@ -84,6 +110,10 @@ func roll() -> int:
 
 func _raw_roll() -> int:
 	return faces[_rng.randi_range(0, faces.size() - 1)]
+
+
+func is_cocked() -> bool:
+	return cocked_on != -1
 
 
 func lock(owner_tag: String = "player") -> void:

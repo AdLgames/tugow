@@ -47,13 +47,26 @@ func begin_floor() -> void:
 		d.value = 0
 		d.last_value = 0
 		d.repeated = false
+		d.lost = false
+		d.cocked_on = -1
+		d.landing_radius = 0.0
+		d.zone = Throw.Zone.POT
 	table.clear()
 
 
+## Free to be drawn: not locked by anyone, not lost off the table.
 func unlocked_dice() -> Array[Die]:
 	var out: Array[Die] = []
 	for d in dice:
-		if not d.locked:
+		if not d.locked and not d.lost:
+			out.append(d)
+	return out
+
+
+func lost_dice() -> Array[Die]:
+	var out: Array[Die] = []
+	for d in dice:
+		if d.lost:
 			out.append(d)
 	return out
 
@@ -69,7 +82,10 @@ func locked_by(owner_tag: String) -> Array[Die]:
 ## Compose this turn's table: everything this side has locked, topped up with
 ## free dice drawn from the shared pool.
 func begin_turn(owner_tag: String = "player") -> Array[Die]:
-	table = locked_by(owner_tag)
+	table = []
+	for d in locked_by(owner_tag):
+		if not d.lost:
+			table.append(d)
 	var free := unlocked_dice()
 	_shuffle(free)
 	var want := Balance.dice_per_roll - table.size()
@@ -78,16 +94,39 @@ func begin_turn(owner_tag: String = "player") -> Array[Die]:
 	return table
 
 
-## Roll every unlocked die on the table. Locked dice keep their face.
+## Throw every unlocked die on the table. Locked dice keep their face and
+## cannot be struck or lost.
+func throw_table(strength: int, long_throw: bool = false) -> Throw.Result:
+	return Throw.resolve(table, strength, rng, long_throw)
+
+
+## Face-only roll with no table physics. Used by tests and by the Reflection,
+## which wears a roll rather than making one.
 func roll_table() -> void:
 	for d in table:
 		d.roll()
 
 
+## What the resolver sees. Lost dice contribute nothing; a cocked die
+## contributes both its own face and the face of the die beneath it.
 func table_values() -> Array:
 	var out: Array = []
 	for d in table:
+		if d.lost or d.value <= 0:
+			continue
 		out.append(d.value)
+		if d.cocked_on != -1:
+			var beneath := get_die(d.cocked_on)
+			if beneath != null and not beneath.lost and beneath.value > 0:
+				out.append(beneath.value)
+	return out
+
+
+func live_table() -> Array[Die]:
+	var out: Array[Die] = []
+	for d in table:
+		if not d.lost:
+			out.append(d)
 	return out
 
 
@@ -108,7 +147,16 @@ func locked_count() -> int:
 func describe_table() -> String:
 	var parts: Array[String] = []
 	for d in table:
-		parts.append(d.describe())
+		if d.lost:
+			parts.append("%s: gone" % d.die_name)
+			continue
+		var zone_tag := ""
+		if d.zone == Throw.Zone.RAIL:
+			zone_tag = " [rail]"
+		if d.cocked_on != -1:
+			var beneath := get_die(d.cocked_on)
+			zone_tag += " [cocked on %s]" % (beneath.die_name if beneath != null else "?")
+		parts.append(d.describe() + zone_tag)
 	return " | ".join(parts)
 
 

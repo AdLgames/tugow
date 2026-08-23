@@ -21,6 +21,12 @@ func refresh() -> void:
 	if die == null:
 		return
 	var tags: Array[String] = []
+	if die.lost:
+		tags.append("OFF TABLE")
+	if die.zone == Throw.Zone.RAIL and not die.lost:
+		tags.append("RAIL x2")
+	if die.is_cocked():
+		tags.append("COCKED")
 	if die.locked:
 		tags.append("LOCKED")
 	if die.bitter:
@@ -29,16 +35,22 @@ func refresh() -> void:
 		tags.append("again")
 	if Array(die.faces) != [1, 2, 3, 4, 5, 6]:
 		tags.append("faceted")
-	text = "%s\n\n%d\n\n%s" % [die.die_name, die.value, " ".join(tags)]
-	disabled = die.locked or die.value == 0
+	text = "%s\n\n%s\n\n%s" % [
+		die.die_name, "—" if die.lost else str(die.value), "\n".join(tags),
+	]
+	disabled = die.locked or die.value == 0 or die.lost
 	var tint := ThemeColors.INK
-	if die.locked:
+	if die.lost:
+		tint = ThemeColors.BURNED
+	elif die.locked:
 		tint = ThemeColors.LOCKED
+	elif die.zone == Throw.Zone.RAIL:
+		tint = ThemeColors.DECLARED
 	elif die.bitter:
 		tint = ThemeColors.BITTER
 	add_theme_color_override("font_color", tint)
 	add_theme_color_override("font_disabled_color", tint)
-	tooltip_text = "%s — faces %s%s" % [
-		die.die_name, str(Array(die.faces)),
+	tooltip_text = "%s — faces %s, hidden face %d%s" % [
+		die.die_name, str(Array(die.faces)), die.underside(),
 		"\nBitter: refuses its lowest face." if die.bitter else "",
 	]

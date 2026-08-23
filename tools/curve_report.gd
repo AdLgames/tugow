@@ -17,6 +17,7 @@ func _ready() -> void:
 	_depth_sweep()
 	_reclaim_sweep()
 	_carry_sweep()
+	_rail_sweep()
 	get_tree().quit(0)
 
 
@@ -73,6 +74,8 @@ func _floor_ladder() -> void:
 
 func _depth_sweep() -> void:
 	print("\n=== Greedy bot depth ===")
+	var original_curve: int = Balance.curve
+	var original_scaling: float = Balance.floor_scaling
 	for curve in [Balance.ScoreCurve.RAW, Balance.ScoreCurve.TEMPERED]:
 		Balance.curve = curve
 		for scaling in [1.4, 1.5, 1.6]:
@@ -87,8 +90,41 @@ func _depth_sweep() -> void:
 			print("  curve=%-8s scaling=%.2f  mean floor %.2f  median %d  best %d"
 				% ["RAW" if curve == Balance.ScoreCurve.RAW else "TEMPERED",
 					scaling, float(sum) / depths.size(), depths[depths.size() / 2], depths[depths.size() - 1]])
-	Balance.curve = Balance.ScoreCurve.TEMPERED
-	Balance.floor_scaling = 1.6
+	Balance.curve = original_curve
+	Balance.floor_scaling = original_scaling
+
+
+## Open question #7: rail doubling on top of exponential categories.
+func _rail_sweep() -> void:
+	print("\n=== Rail multiplier (open question #7) ===")
+	var original: int = Balance.rail_mode
+	# What one rail Large Straight is worth under each shape.
+	var straight := Scoring.score(Scoring.Box.LARGE_STRAIGHT, [2, 3, 4, 5, 6])
+	for mode in [Balance.RailMode.EXPONENTIAL, Balance.RailMode.LINEAR, Balance.RailMode.FLAT]:
+		Balance.rail_mode = mode
+		var label: String = ["EXPONENTIAL", "LINEAR", "FLAT"][mode]
+		var line := "  %-12s  large straight on the rail:" % label
+		for rail_dice in [1, 3, 5]:
+			var dice: Array[Die] = []
+			for i in rail_dice:
+				var d := Die.new(i, "d", null)
+				d.zone = Throw.Zone.RAIL
+				dice.append(d)
+			line += "  %dx=%d" % [rail_dice, int(straight * Throw.rail_multiplier(dice))]
+		print(line)
+	for mode in [Balance.RailMode.EXPONENTIAL, Balance.RailMode.LINEAR, Balance.RailMode.FLAT]:
+		Balance.rail_mode = mode
+		var sum := 0
+		var best := 0
+		for seed_value in range(1, RUNS + 1):
+			var depth := _play(seed_value)
+			sum += depth
+			best = maxi(best, depth)
+		var name: String = ["EXPONENTIAL", "LINEAR", "FLAT"][mode]
+		print("  %-12s  mean floor %.2f  best %d  (threshold at floor 12: %d)"
+			% [name, float(sum) / RUNS, best,
+				Balance.threshold_for_floor(12)])
+	Balance.rail_mode = original
 
 
 ## How much of an overshoot should carry to the next floor?
@@ -130,8 +166,8 @@ func _play(seed_value: int) -> int:
 	var guard := 0
 	while game.phase != Game.Phase.RUN_OVER and guard < 400:
 		guard += 1
-		if game.phase == Game.Phase.FORGE:
-			game.leave_forge()
+		if game.phase == Game.Phase.BENCH:
+			game.leave_bench()
 			continue
 		for d in game.pool.table:
 			if d.value >= 5:
