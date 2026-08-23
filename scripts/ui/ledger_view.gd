@@ -9,13 +9,18 @@ extends Control
 ## Source: docs/design-system/BUILD_BRIEF_table_scene.md, "The Ledger".
 
 signal line_pressed(box: int)
+signal line_hovered(box: int)
 
 const WIDTH := 610.0
 const ROW_HEIGHT := 28.0
 const HEADER := 74.0
 const PAD := 20.0
+## Previews sit out in the margin so the score column stays for real entries.
+const MARGIN_SHIFT := 26.0
 
 var game: Game = null
+## Set when the only legal move left is settling a line.
+var urgent: bool = false
 var _hover_row: int = -1
 
 
@@ -36,6 +41,7 @@ func _gui_input(event: InputEvent) -> void:
 		var row := _row_at(event.position.y)
 		if row != _hover_row:
 			_hover_row = row
+			line_hovered.emit(row)
 			queue_redraw()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var row := _row_at(event.position.y)
@@ -46,6 +52,7 @@ func _gui_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_EXIT:
 		_hover_row = -1
+		line_hovered.emit(-1)
 		queue_redraw()
 
 
@@ -63,7 +70,8 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("241c14"))
 	if game != null:
 		draw_string(font, Vector2(PAD, 52),
-			"THIRTEEN LINES · %s" % Lore.lines_owed(game.card.open_count()),
+			("SETTLE A LINE — %s" % Lore.lines_owed(game.card.open_count())) if urgent
+				else ("THIRTEEN LINES · %s" % Lore.lines_owed(game.card.open_count())),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.10, 0.08, 0.13, 0.65))
 	if game == null:
 		return
@@ -91,6 +99,8 @@ func _draw_paper() -> void:
 	draw_circle(Vector2(size.x * 0.12, size.y * 0.08), 90.0, Color(0.72, 0.65, 0.50, 0.16))
 	draw_circle(Vector2(size.x * 0.88, size.y * 0.82), 110.0, Color(0.66, 0.58, 0.42, 0.14))
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.35), false, 2.0)
+	if urgent:
+		draw_rect(Rect2(Vector2.ZERO, size).grow(3), Color(ThemeColors.LOCKED, 0.75), false, 3.0)
 
 
 func _draw_line(box: int, font: Font, declared: int, best: int) -> void:
@@ -131,20 +141,15 @@ func _draw_line(box: int, font: Font, declared: int, best: int) -> void:
 
 func _draw_value(box: int, font: Font, baseline: float, top: float,
 		state: int, open: bool, scratched: bool, best: int) -> void:
+	if open:
+		_draw_preview(box, font, baseline, best)
+		return
+
+	# Settled: committed weight, in the score column.
 	var text := ""
 	var colour := ThemeColors.PENCIL
 	var bold := false
-	if open:
-		if game.phase == Game.Phase.TURN:
-			var preview := game.preview(box)
-			text = str(preview)
-			colour = Color(0.10, 0.08, 0.13, 0.40) if preview <= 0 else ThemeColors.PENCIL
-			if preview > 0 and preview == best:
-				colour = Color("6b4a1e")
-		else:
-			text = Lore.OWED
-			colour = Color(0.10, 0.08, 0.13, 0.40)
-	elif state == Scorecard.State.BURNED:
+	if state == Scorecard.State.BURNED:
 		text = "burned"
 		colour = Color(0.10, 0.08, 0.13, 0.40)
 	elif state == Scorecard.State.ADVERSARY:
@@ -156,12 +161,12 @@ func _draw_value(box: int, font: Font, baseline: float, top: float,
 		text = "you %d" % game.card.points[box]
 		colour = ThemeColors.SCRATCH_RED if scratched else ThemeColors.PENCIL
 
-	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 	var at := Vector2(size.x - PAD - width, baseline)
 	if bold:
-		draw_string(font, at + Vector2(0.6, 0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+		draw_string(font, at + Vector2(0.6, 0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
 			Color(colour, 0.55))
-	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, colour)
+	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, colour)
 
 	# A written zero is a sacrifice, not a failure: strike it hard.
 	if scratched:
@@ -172,3 +177,27 @@ func _draw_value(box: int, font: Font, baseline: float, top: float,
 		var centre := Vector2(size.x * 0.44, top + ROW_HEIGHT * 0.5)
 		draw_circle(centre, 32.0, Color(ThemeColors.SCORCH, 0.30))
 		draw_circle(centre, 20.0, Color("120c08"))
+
+
+## Nothing here is written yet: ghosted pencil, out in the margin, and a zero
+## barely there at all — six zeros in the score column read as real entries.
+func _draw_preview(box: int, font: Font, baseline: float, best: int) -> void:
+	if game.phase != Game.Phase.TURN:
+		return
+	var value := game.preview(box)
+	var text := str(value) if value > 0 else "—"
+	var colour := Color(ThemeColors.PENCIL, 0.42)
+	var size_px := 12
+	if value <= 0:
+		colour = Color(ThemeColors.PENCIL, 0.16)
+	elif value == best:
+		colour = Color("6b4a1e")
+		size_px = 14
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+	# The margin, not the column: settled scores own the column.
+	draw_string(font, Vector2(size.x - PAD - width + MARGIN_SHIFT, baseline), text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, size_px, colour)
+	if value > 0 and value == best:
+		draw_line(Vector2(size.x - PAD + MARGIN_SHIFT - width - 8, baseline + 3),
+			Vector2(size.x - PAD + MARGIN_SHIFT + 2, baseline + 3), Color("6b4a1e", 0.5), 1.0)
+

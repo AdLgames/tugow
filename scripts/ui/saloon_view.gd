@@ -35,6 +35,8 @@ var dark_oak: bool = false
 var show_slot_captions: bool = false
 ## Hovering a draw button shows how far that strength can reach.
 var preview_strength: int = -1
+## Pulled back when the only move left is on the Ledger.
+var dim_table: bool = false
 
 ## Sampled from each lantern's sway so dice cast two shadows out of phase.
 var sway_left: float = 0.0
@@ -196,6 +198,8 @@ func _draw() -> void:
 		_draw_table()
 	if layers[&"lip"]:
 		_draw_lip()
+	if dim_table:
+		draw_rect(Rect2(Vector2.ZERO, STAGE), Color(ThemeColors.BACKGROUND, 0.45), true)
 	_update_lamps()
 	_poster_slot.visible = layers[&"backdrop"]
 	for slot in [_poster_slot, _foe_slot, _hands_slot]:

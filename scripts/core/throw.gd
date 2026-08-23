@@ -14,6 +14,13 @@ const STRENGTH_NAMES := {
 	Strength.HARD: "Hard",
 }
 
+## One line each, shown on the button itself.
+const STRENGTH_SHORT := {
+	Strength.SOFT: "tight cluster, no rail",
+	Strength.MEDIUM: "some rail, no dirt",
+	Strength.HARD: "wide, rail, 1 in 5 lost",
+}
+
 const STRENGTH_BLURBS := {
 	Strength.SOFT: "Clustered, safe, never reaches the rail.",
 	Strength.MEDIUM: "Normal spread. Some dice reach the rail.",

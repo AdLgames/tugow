@@ -72,10 +72,10 @@ func _take_turn(game: Game) -> void:
 	if not _main._overlay.visible:
 		_fail("writing a box did not ask for confirmation")
 		return
-	if _press("Write it"):
+	if _hold("Hold to write it"):
 		_confirms_taken += 1
 	else:
-		_fail("no confirm button on the write overlay")
+		_fail("no hold-to-commit control on the write overlay")
 
 
 func _walk_bench(game: Game) -> void:
@@ -100,6 +100,15 @@ func _walk_bench(game: Game) -> void:
 
 
 # --- Overlay driving ---------------------------------------------------------
+
+## Settling is a press-and-hold, so the test holds it.
+func _hold(label_prefix: String) -> bool:
+	for child in _main._overlay_body.get_children():
+		if child is HoldButton and child.text.begins_with(label_prefix):
+			child.held.emit()
+			return true
+	return false
+
 
 func _press(label_prefix: String) -> bool:
 	for child in _main._overlay_body.get_children():

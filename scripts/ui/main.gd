@@ -15,14 +15,17 @@ var _scene: SaloonView
 var _dice_layer: Control
 var _die_views: Array[DieView] = []
 var _ledger: LedgerView
+var _tray: DiceTray
 var _placard: Control
 var _night_label: Label
 var _score_label: Label
 var _meter: ProgressBar
 var _owed_label: Label
+var _draws_label: Label
 var _hint_label: Label
 var _throw_buttons: Array[Button] = []
 var _roll_button: Button
+var _foe_panel: PanelContainer
 var _adversary_panel: VBoxContainer
 var _charm_label: Label
 var _log_view: RichTextLabel
@@ -63,7 +66,13 @@ func _build() -> void:
 	_ledger = LedgerView.new()
 	_ledger.position = Vector2(74, 418)
 	_ledger.line_pressed.connect(_on_box_pressed)
+	_ledger.line_hovered.connect(_on_line_hovered)
 	add_child(_ledger)
+
+	_tray = DiceTray.new()
+	_tray.position = Vector2(752, 838)
+	_tray.size = Vector2(1150, 54)
+	add_child(_tray)
 
 	_build_placard()
 	_build_corners()
@@ -111,7 +120,8 @@ func _build_corners() -> void:
 	var foe_panel := PanelContainer.new()
 	foe_panel.position = Vector2(1560, 24)
 	foe_panel.size = Vector2(336, 200)
-	foe_panel.add_theme_stylebox_override("panel", ThemeColors.panel_style(ThemeColors.ADVERSARY))
+	_foe_panel = foe_panel
+	foe_panel.add_theme_stylebox_override("panel", ThemeColors.panel_style())
 	_adversary_panel = VBoxContainer.new()
 	foe_panel.add_child(_adversary_panel)
 	add_child(foe_panel)
@@ -166,6 +176,7 @@ func _build_lip_strip() -> void:
 	_meter.show_percentage = false
 	strip.add_child(_meter)
 	_owed_label = _stat(strip, Lore.lines_owed(13))
+	_draws_label = _stat(strip, "2 draws left")
 
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -429,6 +440,20 @@ func _on_die_pressed(die: Die) -> void:
 	_set_overlay_visible(true)
 
 
+## A preview that shows only the reward is half the decision.
+func _on_line_hovered(box: int) -> void:
+	if game == null or box < 0 or game.phase != Game.Phase.TURN or not game.card.is_open(box):
+		_hint_label.text = _hint()
+		return
+	var value := game.preview(box)
+	if value > 0:
+		_hint_label.text = "%d — and %s is gone for the run. %s would remain."\
+			% [value, Scoring.box_name(box).to_upper(), Lore.lines_owed(game.card.open_count() - 1)]
+	else:
+		_hint_label.text = "Nothing — and %s is still gone for the run. %s would remain."\
+			% [Scoring.box_name(box).to_upper(), Lore.lines_owed(game.card.open_count() - 1)]
+
+
 func _on_box_pressed(box: int) -> void:
 	if game == null or game.phase != Game.Phase.TURN or not game.card.is_open(box):
 		return
@@ -445,10 +470,13 @@ func _on_box_pressed(box: int) -> void:
 		% Lore.lines_owed(game.card.open_count() - 1))
 	_overlay_text("%s: %d + %d = %d of %d."
 		% [Lore.night(game.floor_number), game.floor_score, value, game.floor_score + value, game.threshold])
-	_overlay_button("Write it", func() -> void:
+	var commit := HoldButton.new("Hold to write it — %s is gone for the run"
+		% Scoring.box_name(box).to_upper())
+	commit.held.connect(func() -> void:
 		_set_overlay_visible(false)
 		game.write_box(box)
 		_refresh())
+	_overlay_body.add_child(commit)
 	_overlay_button("Back", func() -> void:
 		_set_overlay_visible(false)
 		_refresh())
@@ -470,6 +498,7 @@ func _refresh() -> void:
 
 	_scene.pool = game.pool
 	_scene.adversary_present = game.adversary != null
+	_tray.bind(game)
 	_refresh_dice()
 	_ledger.queue_redraw()
 	_refresh_adversary()
@@ -511,22 +540,47 @@ func _refresh_throw_buttons() -> void:
 	var free := game.free_dice_on_table()
 	for strength in _throw_buttons.size():
 		var button := _throw_buttons[strength]
-		button.disabled = game.phase != Game.Phase.TURN or throws_left <= 0 or frozen
-		if frozen:
-			button.text = "Every die staked"
+		var reason := ""
+		if game.phase != Game.Phase.TURN:
+			reason = "not your draw"
+		elif frozen:
+			# Two different dead ends, and the player needs to know which.
+			reason = "every die in the dirt" if _table_is_empty() else "every die staked"
 		elif throws_left <= 0:
-			button.text = "No draws left"
-		else:
-			button.text = "%s\n%s — %d %s" % [
-				Lore.THROW, Throw.strength_name(strength).to_lower(),
-				free, "die" if free == 1 else "dice",
-			]
+			reason = "no draws left — settle a line"
+		button.disabled = reason != ""
+		# The name survives the disabled state; the reason sits under it.
+		button.text = "%s\n%s" % [
+			Throw.strength_name(strength).to_upper(),
+			reason if reason != "" else Throw.STRENGTH_SHORT[strength],
+		]
+		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
 		var tint := ThemeColors.INK
-		if strength == Throw.Strength.HARD:
-			tint = ThemeColors.ADVERSARY
+		if reason != "":
+			tint = ThemeColors.BURNED
+		elif strength == Throw.Strength.HARD:
+			tint = ThemeColors.DECLARED
 		elif strength == Throw.Strength.SOFT:
 			tint = ThemeColors.PLAYER
 		button.add_theme_color_override("font_color", tint)
+		button.add_theme_color_override("font_disabled_color", tint)
+
+	# With no draws left there is exactly one legal move. Say so, and put the
+	# light on the Ledger rather than the table.
+	var out_of_draws := throws_left <= 0 or frozen
+	_ledger.urgent = out_of_draws and game.phase == Game.Phase.TURN
+	_scene.dim_table = _ledger.urgent
+	_draws_label.text = "%d %s left" % [maxi(0, throws_left), "draw" if throws_left == 1 else "draws"]
+	_draws_label.add_theme_color_override("font_color",
+		ThemeColors.DECLARED if out_of_draws else ThemeColors.INK_DIM)
+
+
+## Nothing left to throw because they are all gone, rather than all staked.
+func _table_is_empty() -> bool:
+	for d in game.pool.table:
+		if not d.lost:
+			return false
+	return true
 
 
 func _refresh_adversary() -> void:
@@ -534,10 +588,16 @@ func _refresh_adversary() -> void:
 		child.queue_free()
 	var heading := Label.new()
 	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	heading.add_theme_color_override("font_color", ThemeColors.ADVERSARY)
+	# Red belongs to the man, to lines being taken, and to dice in the dirt.
+	# Nobody across the table is the reassuring state: keep it warm.
+	var threat := game.adversary != null
+	heading.add_theme_color_override("font_color",
+		ThemeColors.ADVERSARY if threat else ThemeColors.INK_DIM)
+	_foe_panel.add_theme_stylebox_override("panel",
+		ThemeColors.panel_style(ThemeColors.ADVERSARY if threat else ThemeColors.PANEL_EDGE))
 	_adversary_panel.add_child(heading)
 	if game.adversary == null:
-		heading.text = "NO ONE ACROSS THE TABLE"
+		heading.text = "the chair opposite is empty"
 		var waiting := Label.new()
 		waiting.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		waiting.add_theme_color_override("font_color", ThemeColors.INK_DIM)
@@ -579,6 +639,10 @@ func _next_duel_floor() -> int:
 func _hint() -> String:
 	if game.phase != Game.Phase.TURN:
 		return ""
+	if not game.can_throw() or game.rerolls_left <= 0:
+		if _table_is_empty():
+			return "Every die is in the dirt. Settle a line — it will take nothing, and it is still gone for the run."
+		return "No draws left. Settle a line: it is the only move you have."
 	var rails := Throw.rail_count(game.pool.table)
 	if rails > 0:
 		return "%d on the rail: x%.0f on this score, but the next draw shoves %s toward the lip. Stake, or settle now."\
