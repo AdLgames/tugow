@@ -35,18 +35,46 @@ first pass for comparison; the test suite asserts both.
 uncapped span scores it 150 while Large Straight scores the identical dice 720.
 Capping the span keeps the two boxes distinct and matches the stated number.
 
-## 2. What a turn is worth
+## 2. What a turn is worth, and why Chance changed
 
-20,000 fresh five-dice rolls, taking the best of all thirteen boxes:
+20,000 fresh five-dice rolls, taking the best of all thirteen boxes.
 
-- **mean best score: 79.4**, ceiling observed 2,592.
-- Picked box: Fives 21.8%, Sixes 20.4%, Chance 20.3%, Small Straight 12.5%,
-  Three of a Kind 9.9%, everything else under 7%. Yahtzee: 0.0%.
+**Before:** mean best 79.4. Picked box: Fives 21.8%, Sixes 20.4%,
+**Chance 20.3%**, Small Straight 12.5%. Doubling per 6 made Chance the best box
+on a fifth of all rolls — and a 20 with two 6s became an 80, which clears
+floor 1 (threshold 60) on turn one with no decision made. A box whose whole
+purpose is "the roll did nothing, dump it here" was the strongest opening play.
 
-That mean is the unit the floor ladder is calibrated in. It is also a warning:
-Chance being picked a fifth of the time means the "doubled per 6" operator is
-competitive with real patterns, which is fine early and lazy late — worth
-watching once locking engines exist.
+**Now** (`sum + 10 per 6`): mean best 75.0. Picked box: Sixes 40.5%, Fives
+21.8%, Small Straight 12.5%, Three of a Kind 9.9%. **Chance is never the
+highest-scoring box.**
+
+That is the intended shape, and it is worth being explicit about it: Chance is
+now a *safety valve*, not a play. It is the box that always scores something
+when the dice have given you nothing, which is exactly what it should be when
+scratching is the alternative. The greedy reference bot therefore never picks
+it, which is a limitation of the bot, not evidence the box is dead — a human
+reaches for it precisely in the situations the bot's "highest score wins"
+metric never encounters.
+
+If Chance should be a live *option* rather than a floor, `chance_six_bonus` is
+one line in `balance.gd`; 15 puts it back in competition without restoring the
+solo-clear.
+
+## 2b. Overshoot carries
+
+Scoring 97 into a 60 threshold used to waste 37 points, which meant there was
+never a reason to score big — only to score *enough*, and the whole
+"is this roll worth a box?" question collapsed into "does it clear?".
+
+Overshoot now banks: the excess carries into the next floor's starting score,
+capped at half of that floor's threshold so that one monster turn cannot skip
+a floor outright (`overflow_carry_ratio`, `overflow_carry_cap`).
+
+Greedy-bot mean depth by carry ratio: 0.0 → 3.67, 0.5 → 3.90, 1.0 → 3.97.
+Committed at 1.0 with the 50% cap. The duel comparison deliberately ignores
+carried points — you out-score an Adversary with what you scored on its floor,
+not with what you brought in.
 
 ## 3. Floor scaling (open question #2)
 
@@ -62,14 +90,14 @@ maximum-value Yahtzees, and the ladder stops being a target and becomes a wall.
 
 ## 4. Reclaim generosity (open question #5)
 
-Greedy-bot mean depth by reclaim value: 0 → 3.60, 1 → 3.65, 2 → 3.72,
-3 → 3.83, 4 → 3.90, 5 → 4.00. Monotonic and gentle — no value tested makes the
+Greedy-bot mean depth by reclaim value: 0 → 3.72, 1 → 3.80, 2 → 3.88,
+3 → 3.97, 4 → 4.13, 5 → 4.20. Monotonic and gentle — no value tested makes the
 run unkillable, so **3 is committed** on the grounds that it is a visible
 reward (a quarter of the card) without being a reset.
 
 The more useful finding is what the sweep exposes: **run length is governed by
-turns-per-floor, not by thresholds.** Scaling from 1.4× to 1.6× moved mean
-depth by 0.15 floors; the bot dies at floor 4 in every configuration because it
+turns-per-floor, not by thresholds.** Scaling from 1.4× to 1.6× moves mean
+depth by about half a floor (4.47 → 3.97), while the card runs dry either way; the bot dies at floor 4 in every configuration because it
 spends three boxes a floor and only meets an Adversary on floors 3 and 5. The
 scorecard, not the difficulty curve, is the clock — which is the design working
 as intended, but it means future tuning should go to reclaim, duel frequency,

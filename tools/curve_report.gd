@@ -16,6 +16,7 @@ func _ready() -> void:
 	_floor_ladder()
 	_depth_sweep()
 	_reclaim_sweep()
+	_carry_sweep()
 	get_tree().quit(0)
 
 
@@ -31,7 +32,7 @@ func _operator_table() -> void:
 		var y := Scoring.score(Scoring.Box.YAHTZEE, five)
 		print("  %d %9d %6d %6d %11d %8d" % [face, upper, three, four, fh, y])
 	print("large straight 2-6: %d" % Scoring.score(Scoring.Box.LARGE_STRAIGHT, [2, 3, 4, 5, 6]))
-	print("chance 6,6,5,4,3:   %d" % Scoring.score(Scoring.Box.CHANCE, [6, 6, 5, 4, 3]))
+	print("chance 6,6,5,4,3:   %d (+%d per 6)" % [Scoring.score(Scoring.Box.CHANCE, [6, 6, 5, 4, 3]), Balance.chance_six_bonus])
 
 
 ## What is one turn worth? Roll five fair dice, take the best open box.
@@ -88,6 +89,22 @@ func _depth_sweep() -> void:
 					scaling, float(sum) / depths.size(), depths[depths.size() / 2], depths[depths.size() - 1]])
 	Balance.curve = Balance.ScoreCurve.TEMPERED
 	Balance.floor_scaling = 1.6
+
+
+## How much of an overshoot should carry to the next floor?
+func _carry_sweep() -> void:
+	print("\n=== Overflow carry ===")
+	var original: float = Balance.overflow_carry_ratio
+	for ratio in [0.0, 0.5, 1.0]:
+		Balance.overflow_carry_ratio = ratio
+		var sum := 0
+		var best := 0
+		for seed_value in range(1, RUNS + 1):
+			var depth := _play(seed_value)
+			sum += depth
+			best = maxi(best, depth)
+		print("  carry=%.2f  mean floor %.2f  best %d" % [ratio, float(sum) / RUNS, best])
+	Balance.overflow_carry_ratio = original
 
 
 ## Open question #5: how many boxes should out-scoring an Adversary return?
