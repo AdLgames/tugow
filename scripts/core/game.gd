@@ -54,14 +54,14 @@ func start_run(seed_value: int = 0) -> void:
 	log_lines.clear()
 	pending_carry = 0
 	floor_carry_in = 0
-	log_line("Thirteen boxes. Spend them carefully.")
+	log_line("Thirteen lines. Settle them carefully.")
 	next_floor()
 
 
 func next_floor() -> void:
 	floor_number += 1
 	if floor_number > TOTAL_FLOORS:
-		_end_run(true, "You walked out with %d boxes still unspent." % card.open_count())
+		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
 		return
 	threshold = Balance.threshold_for_floor(floor_number)
 	floor_carry_in = pending_carry
@@ -73,7 +73,7 @@ func next_floor() -> void:
 	adversary = AdversaryRoster.for_floor(floor_number) if Balance.is_duel_floor(floor_number) else null
 	for c in charms:
 		c.on_floor_start(self)
-	log_line("--- Floor %d — threshold %d ---" % [floor_number, threshold])
+	log_line("--- %s — threshold %d ---" % [Lore.night(floor_number), threshold])
 	if floor_carry_in > 0:
 		log_line("Carried in: %d." % floor_carry_in)
 	if adversary != null:
@@ -87,7 +87,7 @@ func next_floor() -> void:
 ## Compose the table for a new turn. Locked dice are still sitting there.
 func begin_turn() -> void:
 	if card.is_exhausted():
-		_end_run(false, "The card is full. The run ends where you are standing.")
+		_end_run(false, "The Ledger is full. The run ends where you are standing.")
 		return
 	phase = Phase.TURN
 	floor_turn += 1
@@ -144,7 +144,7 @@ func lock_die(die: Die) -> void:
 	pool.lock_die(die, "player")
 	for c in charms:
 		c.on_lock(self, die)
-	log_line("Locked %s on %d for the floor." % [die.die_name, die.value])
+	log_line("Staked %s on %d for the night." % [die.die_name, die.value])
 	state_changed.emit()
 
 
@@ -196,10 +196,10 @@ func write_box(box: int) -> void:
 			% [Scoring.box_name(box), adversary.display_name])
 	floor_score += value
 	if value == 0:
-		log_line("Scratched %s. A hole for the rest of the run." % Scoring.box_name(box))
+		log_line("Struck out %s. A hole in the Ledger for the rest of the run." % Scoring.box_name(box))
 		_embitter_locked()
 	else:
-		log_line("%s for %d. (floor %d/%d)" % [Scoring.box_name(box), value, floor_score, threshold])
+		log_line("%s for %d. (%d/%d tonight)" % [Scoring.box_name(box), value, floor_score, threshold])
 		_reward_locked_dice()
 	for c in charms:
 		for extra in c.extra_writes(self, box, values):
@@ -217,14 +217,14 @@ func _after_player_turn() -> void:
 		_clear_floor()
 		return
 	if card.is_exhausted():
-		_end_run(false, "The card is full on floor %d." % floor_number)
+		_end_run(false, "The Ledger is full on %s." % Lore.night(floor_number).to_lower())
 		return
 	if adversary != null:
 		_adversary_turn()
 		if phase == Phase.RUN_OVER:
 			return
 		if card.is_exhausted():
-			_end_run(false, "The card is full on floor %d." % floor_number)
+			_end_run(false, "The Ledger is full on %s." % Lore.night(floor_number).to_lower())
 			return
 	begin_turn()
 
@@ -234,7 +234,7 @@ func _adversary_turn() -> void:
 	log_line(line)
 	adversary_acted.emit(line)
 	if card.adversary_count() >= Balance.adversary_card_limit:
-		_end_run(false, "%s claimed seven boxes. It takes the card." % adversary.display_name)
+		_end_run(false, "%s has seven lines. He takes the Ledger." % adversary.display_name)
 		return
 	_adversary_declare()
 
@@ -258,11 +258,11 @@ func _clear_floor() -> void:
 		else:
 			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
 				% [adversary.display_name, adversary.duel_score, earned])
-	log_line("Floor %d cleared in %d turns. %d boxes left." % [floor_number, floor_turn, card.open_count()])
+	log_line("%s cleared in %d draws. %s." % [Lore.night(floor_number), floor_turn, Lore.lines_owed(card.open_count())])
 	_bank_overflow()
 	if floor_number >= TOTAL_FLOORS:
 		floor_cleared.emit(floor_number, reclaimed)
-		_end_run(true, "Twelve floors down with %d boxes to spare." % card.open_count())
+		_end_run(true, "Twelve nights down with %s." % Lore.lines_owed(card.open_count()))
 		return
 	# Phase first: listeners read it to decide whether to open the bench.
 	phase = Phase.BENCH
@@ -281,7 +281,7 @@ func _bank_overflow() -> void:
 	pending_carry = mini(int(overflow * Balance.overflow_carry_ratio), cap)
 	if pending_carry <= 0:
 		return
-	log_line("Overshot by %d. %d carries to floor %d." % [overflow, pending_carry, floor_number + 1])
+	log_line("Overshot by %d. %d carries to %s." % [overflow, pending_carry, Lore.night(floor_number + 1).to_lower()])
 
 
 func leave_bench() -> void:

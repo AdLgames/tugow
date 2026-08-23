@@ -1,0 +1,12 @@
+/* Page defaults. The game paints one flat dark rect and puts panels on it. */
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--surface-page);color:var(--text-body);font:var(--type-body);-webkit-font-smoothing:antialiased}
+a{color:var(--tb-locked);text-decoration:none;border-bottom:1px solid rgb(217 164 65 / .4)}
+a:hover{color:var(--tb-declared);border-bottom-color:var(--tb-declared)}
+h1,h2,h3,h4{margin:0;font-family:var(--font-display);font-weight:var(--weight-display);letter-spacing:var(--tracking-display);text-transform:uppercase;line-height:var(--leading-tight)}
+p{margin:0}
+button{font:inherit;color:inherit}
+code,kbd,samp{font-family:var(--font-mono)}
+.tb-num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.tb-panel{background:var(--surface-panel);border:var(--border-width-panel) solid var(--border-panel);border-radius:var(--radius-panel);padding:var(--panel-pad-y) var(--panel-pad-x)}
+.tb-heading{font-family:var(--font-display);font-weight:var(--weight-display);letter-spacing:var(--tracking-display);text-transform:uppercase;color:var(--text-body);font-size:var(--text-base)}

@@ -1,0 +1,36 @@
+/* Separations and margins as the Godot containers declare them:
+   2, 6, 8, 10, 12, 16, 20 — no 4/8 grid, these are the real numbers. */
+:root{
+  --space-2:2px;
+  --space-6:6px;
+  --space-8:8px;
+  --space-10:10px;
+  --space-12:12px;
+  --space-16:16px;
+  --space-20:20px;
+
+  /* panel_style() content margins */
+  --panel-pad-x:10px;
+  --panel-pad-y:8px;
+
+  /* Window chrome: MarginContainer 16 / 12 */
+  --screen-pad-x:16px;
+  --screen-pad-y:12px;
+
+  /* Fixed control sizes from the source */
+  --size-die-w:92px;
+  --size-die-h:104px;
+  --size-box-row-h:30px;
+  --size-box-label-w:228px;
+  --size-box-value-w:70px;
+  --size-roll-btn-w:200px;
+  --size-roll-btn-h:42px;
+  --size-overlay-btn-h:34px;
+  --size-overlay-w:560px;
+  --size-progress-w:140px;
+  --size-progress-h:18px;
+  --size-card-col:320px;
+  --size-side-col:280px;
+  --size-viewport-w:1280px;
+  --size-viewport-h:720px;
+}

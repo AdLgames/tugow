@@ -66,6 +66,10 @@ Let it claim seven boxes and it takes the card.
 | `scripts/ui/` | The interface, built in code |
 | `tests/`, `tools/` | Headless suite, UI smoke test, curve report |
 
+The look comes from the Claude Design handoff in
+[`docs/design-system/`](docs/design-system/) — palette, type, components and
+the `table_scene.html` the playing screen is a port of.
+
 Source of truth: the mechanics specification. How it is implemented, and every
 knowing departure from it: [`docs/MECHANICS.md`](docs/MECHANICS.md). The
 original vision document is kept at [`docs/DESIGN.md`](docs/DESIGN.md).

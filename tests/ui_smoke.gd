@@ -20,8 +20,8 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	# The title screen is an overlay with one button on it.
-	if not _press("Descend"):
-		_fail("no Descend button on the title screen")
+	if not _press("Sit down"):
+		_fail("no start button on the title screen")
 		return _report()
 
 	var game: Game = _main.game
@@ -61,14 +61,14 @@ func _take_turn(game: Game) -> void:
 	if not button.disabled:
 		button.pressed.emit()
 		_throws_by_strength[strength] += 1
-	for view in _main._dice_row.get_children():
-		if view is DieView and view.die.value >= 5 and not view.disabled:
+	for view in _main._die_views:
+		if view.die.value >= 5 and not view.disabled:
 			view.pressed.emit()
 			if _main._overlay.visible:
 				# The lock-out warning: this is the last free die.
-				_press("Lock it anyway")
+				_press("Stake it anyway")
 	var box := _best_box(game)
-	_main._box_rows[box].pressed.emit()
+	_main._ledger.line_pressed.emit(box)
 	if not _main._overlay.visible:
 		_fail("writing a box did not ask for confirmation")
 		return
@@ -95,7 +95,7 @@ func _walk_bench(game: Game) -> void:
 					_press_any_button_that_is_not("Never mind")
 				if game.card.open_count() >= boxes_before:
 					_fail("a forge purchase did not cost a box")
-	if not _press("Descend to floor"):
+	if not _press("On to "):
 		_fail("no way out of the bench")
 
 

@@ -88,6 +88,46 @@ remains open; it is a change to `Game._bank_overflow()` and nothing else.
    question). Freezing the floor is occasionally correct — it should cost you
    a confirmation, not be forbidden.
 
+## The saloon scene
+
+The playing screen is a port of
+`docs/design-system/ui_kits/thirteen_boxes/table_scene.html` and its build
+brief. Layer order, palette, camera and naming come from there; the game state
+under it is real.
+
+| Design layer | Godot |
+|---|---|
+| CSS 3D plane, `perspective` + `rotateX` | `scripts/ui/table_projection.gd` — a pinhole projection of the throw model's unit disc |
+| Backdrop, adversary blockout, table, zones, lip | `scripts/ui/saloon_view.gd`, drawn in the brief's compositing order |
+| Light pools, vignette, grain | Child nodes with their own `CanvasItemMaterial` — blend modes are per-node in Godot, not per-draw-call |
+| `.die` | `scripts/ui/die_view.gd` — pips on a 3×3 grid, layouts through 9 |
+| `.sheet` | `scripts/ui/ledger_view.gd` — pencil for yours, ink for his |
+| `<image-slot>` | `scripts/ui/image_slot.gd` — loads `res://assets/…` if present, else a dashed frame |
+| `#tweaks` | `scripts/ui/debug_panel.gd` — F3, `OS.is_debug_build()` only |
+
+Art drops in by filename, no code change:
+`res://assets/adversary/seated.png`, `res://assets/scene/wanted_poster.png`,
+`res://assets/scene/hands.png`.
+
+### Where the port differs from the mock, deliberately
+
+1. **Camera pitch is 58°, not the 144° in the shipped HTML.** 144 is past
+   edge-on and renders the table inside-out — the brief's own known issue #1,
+   which names 58 as the settled value.
+2. **Dice sit where the throw resolver put them**, not in a fixed row. The
+   mock's row is a static arrangement; the zones are functional here, so a
+   die on the rail is drawn on the rail. Landing positions are mapped into the
+   band of felt that is actually visible and clickable, so a die never lands
+   under the Ledger or behind the lip.
+3. **Chance reads "Sum, +10 per 6".** The mock still carries the old doubling
+   rule; the code changed and the mock did not.
+4. **Screen and overlay blending are approximated.** Godot has no screen or
+   overlay blend mode: light pools use additive (near-identical over a dark
+   room) and grain uses a low-alpha mix. Real exported PNGs would keep the
+   same approximation.
+5. **Three draw buttons, not one.** The mock has a single "The Draw"; the game
+   needs soft, medium and hard, styled as the mock's `.rollbtn`.
+
 ## Section 9 — required UI state
 
 | Requirement | Status |
@@ -101,4 +141,12 @@ remains open; it is a change to `Game._bank_overflow()` and nothing else.
 | Adversary declared target | Done — marked on the card and in the corner panel |
 | Charm slots | Done |
 | Die names and condition | Done — pool strip shows facet progress, bitterness, holder, losses |
-| Boxes remaining | Done — header, agreeing with the card |
+| Boxes remaining | Done — lip strip, agreeing with the Ledger |
+
+## Naming
+
+`scripts/ui/lore.gd` holds every player-facing word: the Ledger, lines owed,
+staking, the Draw, nights, the Assayer's Office, and the adversary display
+names (The Taxman, The Magpie, Your Brother, The Fire, The Debtor). Code ids,
+class names, tests and the rest of these docs keep the mechanical terms — the
+brief asks for the display strings to change, not the ids.
