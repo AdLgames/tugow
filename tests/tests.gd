@@ -18,6 +18,9 @@ func _ready() -> void:
 	_test_forge()
 	_test_adversaries()
 	_test_denial()
+	_test_floor_transition()
+	_test_overflow_carry()
+	_test_lock_out_guard()
 	_test_full_runs()
 	_report()
 
@@ -47,7 +50,7 @@ func _test_combination_boxes() -> void:
 	check(Scoring.score(Scoring.Box.LARGE_STRAIGHT, [2, 3, 4, 5, 6]) == 720, "large straight 2-6 = 720")
 	check(Scoring.score(Scoring.Box.LARGE_STRAIGHT, [1, 2, 3, 4, 6]) == 0, "broken run scores no large straight")
 	# Chance: sum, doubled per 6 shown. 24 with two 6s -> 96
-	check(Scoring.score(Scoring.Box.CHANCE, [6, 6, 5, 4, 3]) == 96, "chance doubles per 6")
+	check(Scoring.score(Scoring.Box.CHANCE, [6, 6, 5, 4, 3]) == 44, "chance adds 10 per 6")
 	check(Scoring.score(Scoring.Box.CHANCE, [1, 2, 3, 4, 5]) == 15, "chance with no 6s is the sum")
 
 
@@ -254,6 +257,78 @@ func _test_denial() -> void:
 	game.write_box(target)
 	check(denials.size() == 1 and denials[0][1], "taking the announced box is a denial")
 	check(not game.card.is_open(target), "the denied box is spent either way")
+
+
+## Regression: the forge opens because the phase is set before the signal fires.
+func _test_floor_transition() -> void:
+	var game := Game.new()
+	game.start_run(11)
+	# Captured through an array: GDScript lambdas copy plain locals.
+	var phase_at_signal: Array[int] = []
+	game.floor_cleared.connect(func(_n, _r): phase_at_signal.append(game.phase))
+	game.floor_score = game.threshold
+	game.write_box(Scoring.Box.CHANCE)
+	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.FORGE,
+		"the forge is open when the floor-cleared signal lands")
+	check(game.phase == Game.Phase.FORGE, "clearing a floor stops for the forge")
+
+	var floor_before := game.floor_number
+	game.leave_forge()
+	check(game.floor_number == floor_before + 1, "leaving the forge descends")
+	check(game.threshold > 0 and game.rerolls_left == Balance.rerolls_per_turn, "the next floor resets the turn")
+	check(game.pool.locked_count() == 0, "a new floor unlocks every die")
+	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
+
+
+## Overshoot carries instead of evaporating.
+func _test_overflow_carry() -> void:
+	var game := Game.new()
+	game.start_run(21)
+	var next_threshold := Balance.threshold_for_floor(2)
+	game.floor_score = game.threshold + 40
+	game._bank_overflow()
+	check(game.pending_carry == 40, "the overshoot banks")
+	game.leave_forge() if game.phase == Game.Phase.FORGE else game.next_floor()
+	check(game.floor_carry_in == 40 and game.floor_score == 40, "it opens the next floor")
+	check(game.pending_carry == 0, "and is spent once")
+
+	# A monster turn cannot skip a floor outright.
+	var big := Game.new()
+	big.start_run(22)
+	big.floor_score = big.threshold + 100000
+	big._bank_overflow()
+	check(big.pending_carry == int(next_threshold * Balance.overflow_carry_cap),
+		"carry is capped below the next threshold")
+
+	# The duel is judged on what you scored, not on what you carried in.
+	var duel := Game.new()
+	duel.start_run(23)
+	duel.floor_carry_in = 500
+	duel.floor_score = 500
+	duel.adversary = AdversaryRoster.Auditor.new()
+	duel.adversary.duel_score = 100
+	duel.threshold = 400
+	duel._clear_floor()
+	check(duel.card.open_count() == Scoring.BOX_COUNT, "carried points do not win a duel")
+
+
+## Locking your last free die freezes the floor — the UI must be able to warn.
+func _test_lock_out_guard() -> void:
+	var game := Game.new()
+	game.start_run(31)
+	check(game.free_dice_on_table() == Balance.dice_per_roll, "five free dice to start")
+	while game.free_dice_on_table() > 1:
+		for d in game.pool.table:
+			if not d.locked:
+				game.lock_die(d)
+				break
+	var last: Die = null
+	for d in game.pool.table:
+		if not d.locked:
+			last = d
+	check(game.would_lock_out(last), "the last free die is flagged")
+	game.lock_die(last)
+	check(game.free_dice_on_table() == 0, "and locking it freezes the table")
 
 
 func _test_full_runs() -> void:

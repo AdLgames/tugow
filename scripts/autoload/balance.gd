@@ -18,6 +18,16 @@ var floor_scaling: float = 1.45
 ## Floors that host an Adversary instead of a plain threshold.
 var duel_floors: PackedInt32Array = [3, 5, 7, 9, 10, 11, 12]
 
+## Chance adds this per 6 shown. Doubling per 6 made a mediocre roll clear an
+## early floor on its own — see docs/BALANCE.md.
+var chance_six_bonus: int = 10
+
+## Scoring past a threshold banks the difference toward the next floor.
+var overflow_carry_ratio: float = 1.0
+## ...but never more than this fraction of the next threshold, so a monster
+## turn cannot skip a floor.
+var overflow_carry_cap: float = 0.5
+
 # --- Dice -------------------------------------------------------------------
 
 var pool_size: int = 8

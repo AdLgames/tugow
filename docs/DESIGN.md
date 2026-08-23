@@ -203,5 +203,15 @@ Each of these is a decision the resolver forced; the numbers behind them are in
    threshold ladder outruns any card, not just a greedy one.
 4. **Blood Pact is +50%, not "enormous".** A doubling with a second box burned
    per turn is a strictly better deal than it looks; +50% keeps it a real choice.
-5. **Sleeping Giant needs three turns of patience**, rather than triggering on
+5. **Chance is `sum + 10 per 6`, not a doubling.** Doubling made a mediocre
+   roll the best box on a fifth of all rolls and let it clear floor 1 by
+   itself. It is now a safety valve rather than a play.
+6. **Overshoot carries.** Scoring past a threshold banks the excess into the
+   next floor (capped at half that floor's threshold), so there is a reason to
+   score big rather than merely enough. Carried points do not count toward
+   beating an Adversary.
+7. **Writing a box asks for confirmation.** The write is irreversible for the
+   whole run, and so is locking your last free die; both now state what they
+   cost before they happen.
+8. **Sleeping Giant needs three turns of patience**, rather than triggering on
    any first lock — otherwise every first lock of a floor is a free 6.

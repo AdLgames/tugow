@@ -50,7 +50,7 @@ const BOX_RULES := {
 	Box.SMALL_STRAIGHT: "Span (max 4) x highest x 5",
 	Box.LARGE_STRAIGHT: "Product of all five",
 	Box.YAHTZEE: "Face to the fourth x 2",
-	Box.CHANCE: "Sum, doubled per 6",
+	Box.CHANCE: "Sum, +10 per 6",
 }
 
 const UPPER_BOXES: Array[Box] = [Box.ACES, Box.TWOS, Box.THREES, Box.FOURS, Box.FIVES, Box.SIXES]
@@ -124,7 +124,7 @@ static func score(box: int, values: Array) -> int:
 			var total := _sum(values)
 			for v in values:
 				if v == 6:
-					total *= 2
+					total += Balance.chance_six_bonus
 			return total
 	return 0
 

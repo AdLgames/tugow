@@ -18,8 +18,9 @@ Requires **Godot 4.4 or newer** (standard build; no C# needed).
 ```bash
 godot --path .                      # play
 godot --headless --path . --import  # first run in a fresh checkout
-./tools/run_tests.sh                # 108 logic checks
+./tools/run_tests.sh                # 122 logic checks
 godot --headless --path . res://tests/ui_smoke.tscn      # drive the real UI
+xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots  # render every screen
 godot --headless --path . res://tools/curve_report.tscn  # balance sweeps
 ```
 
@@ -32,7 +33,11 @@ godot --headless --path . res://tools/curve_report.tscn  # balance sweeps
    for you every turn from now on, and you roll one die fewer, forever.
 3. Writing into a box ends the turn and spends that box for the rest of the run.
    Writing a zero is a **scratch**: a sacrifice play, not a failure.
-4. Clear the threshold and you descend with whatever boxes you have left.
+4. Every open box shows what it would score for the dice in front of you,
+   greyed at zero and highlighted on the best one. Writing asks you to confirm,
+   because the box is gone for the rest of the run either way.
+5. Clear the threshold and you descend with whatever boxes you have left.
+   Overshoot is not wasted: the excess carries into the next floor.
 
 On duel floors an Adversary writes into the same card. It **announces its target
 box before rolling**, which gives you exactly one turn to respond: deny it by

@@ -33,6 +33,9 @@ var end_reason: String = ""
 
 ## The player's last completed table, read by the Twin and the Magpie.
 var last_player_values: Array = []
+## Overshoot banked from the previous floor, and how much of it opened this one.
+var pending_carry: int = 0
+var floor_carry_in: int = 0
 var log_lines: Array[String] = []
 
 
@@ -44,6 +47,8 @@ func start_run(seed_value: int = 0) -> void:
 	victory = false
 	end_reason = ""
 	log_lines.clear()
+	pending_carry = 0
+	floor_carry_in = 0
 	log_line("Thirteen boxes. Spend them carefully.")
 	next_floor()
 
@@ -54,7 +59,9 @@ func next_floor() -> void:
 		_end_run(true, "You walked out with %d boxes still unspent." % card.open_count())
 		return
 	threshold = Balance.threshold_for_floor(floor_number)
-	floor_score = 0
+	floor_carry_in = pending_carry
+	floor_score = pending_carry
+	pending_carry = 0
 	floor_turn = 0
 	phase = Phase.FLOOR_START
 	pool.begin_floor()
@@ -62,6 +69,8 @@ func next_floor() -> void:
 	for c in charms:
 		c.on_floor_start(self)
 	log_line("--- Floor %d — threshold %d ---" % [floor_number, threshold])
+	if floor_carry_in > 0:
+		log_line("Carried in: %d." % floor_carry_in)
 	if adversary != null:
 		adversary.on_duel_start(self)
 		log_line("%s steps up to the card. %s" % [adversary.display_name, adversary.blurb])
@@ -109,6 +118,22 @@ func lock_die(die: Die) -> void:
 	state_changed.emit()
 
 
+## Dice on the table that are still free to reroll.
+func free_dice_on_table() -> int:
+	var n := 0
+	for d in pool.table:
+		if not d.locked:
+			n += 1
+	return n
+
+
+## Locking every die on the table freezes the rest of the floor: the same
+## score, every turn, with no way to change it. Sometimes correct, never an
+## accident.
+func would_lock_out(die: Die) -> bool:
+	return not die.locked and free_dice_on_table() == 1
+
+
 func table_values() -> Array:
 	return pool.table_values()
 
@@ -131,8 +156,8 @@ func write_box(box: int) -> void:
 	card.write_player(box, value)
 	player_wrote.emit(box, value, denied)
 	if denied:
-		log_line("Denied: %s took %s out of %s's hands."
-			% ["You", Scoring.box_name(box), adversary.display_name])
+		log_line("Denied: you took %s out of %s's hands."
+			% [Scoring.box_name(box), adversary.display_name])
 	floor_score += value
 	if value == 0:
 		log_line("Scratched %s. A hole for the rest of the run." % Scoring.box_name(box))
@@ -188,21 +213,39 @@ func _adversary_declare() -> void:
 
 func _clear_floor() -> void:
 	var reclaimed: Array = []
+	var earned := floor_score - floor_carry_in
 	if adversary != null:
-		if floor_score > adversary.duel_score:
+		if earned > adversary.duel_score:
 			reclaimed = card.reclaim(Balance.duel_reclaim)
 			log_line("You out-scored %s, %d to %d. %d boxes come back."
-				% [adversary.display_name, floor_score, adversary.duel_score, reclaimed.size()])
+				% [adversary.display_name, earned, adversary.duel_score, reclaimed.size()])
 		else:
 			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
-				% [adversary.display_name, adversary.duel_score, floor_score])
+				% [adversary.display_name, adversary.duel_score, earned])
 	log_line("Floor %d cleared in %d turns. %d boxes left." % [floor_number, floor_turn, card.open_count()])
-	floor_cleared.emit(floor_number, reclaimed)
+	_bank_overflow()
 	if floor_number >= TOTAL_FLOORS:
+		floor_cleared.emit(floor_number, reclaimed)
 		_end_run(true, "Twelve floors down with %d boxes to spare." % card.open_count())
 		return
+	# Phase first: listeners read it to decide whether to open the forge.
 	phase = Phase.FORGE
+	floor_cleared.emit(floor_number, reclaimed)
 	state_changed.emit()
+
+
+## Overshoot is not wasted. Scoring past the threshold banks the difference
+## toward the next floor, capped so a huge turn cannot skip a floor outright.
+func _bank_overflow() -> void:
+	var overflow := floor_score - threshold
+	if overflow <= 0:
+		return
+	var next_threshold := Balance.threshold_for_floor(floor_number + 1)
+	var cap := int(next_threshold * Balance.overflow_carry_cap)
+	pending_carry = mini(int(overflow * Balance.overflow_carry_ratio), cap)
+	if pending_carry <= 0:
+		return
+	log_line("Overshot by %d. %d carries to floor %d." % [overflow, pending_carry, floor_number + 1])
 
 
 func leave_forge() -> void:
