@@ -107,6 +107,36 @@ class BloodPact extends Charm:
 		return 1
 
 
+class Underhand extends Charm:
+	func _init() -> void:
+		super(&"underhand", "Underhand", "Reads the hidden underside of your lowest die instead of its top.")
+
+	func modify_values(game, values: Array, dice: Array) -> Array:
+		if dice.is_empty():
+			return values
+		var worst: Die = null
+		for d in dice:
+			if d.value <= 0:
+				continue
+			if worst == null or d.value < worst.value:
+				worst = d
+		if worst == null:
+			return values
+		var flipped := values.duplicate()
+		var idx := flipped.find(worst.value)
+		if idx == -1:
+			return values
+		flipped[idx] = worst.underside()
+		game.log_line("Underhand turns %s over: %d becomes %d."
+			% [worst.die_name, worst.value, worst.underside()])
+		return flipped
+
+
+class LongThrow extends Charm:
+	func _init() -> void:
+		super(&"long_throw", "Long Throw", "Hard throws no longer lose dice off the table.")
+
+
 static func library() -> Array[Charm]:
 	var out: Array[Charm] = []
 	out.append(Grudge.new())
@@ -116,6 +146,8 @@ static func library() -> Array[Charm]:
 	out.append(Accountant.new())
 	out.append(Pigeonhole.new())
 	out.append(BloodPact.new())
+	out.append(Underhand.new())
+	out.append(LongThrow.new())
 	return out
 
 

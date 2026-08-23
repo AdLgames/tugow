@@ -1,0 +1,19 @@
+/* StyleBoxFlat: 1px border, 4px corners on every panel. Nothing is rounder. */
+:root{
+  --radius-panel:4px;
+  --radius-control:4px;
+  --radius-pip:50%;
+  --border-hairline:1px;
+  --border-width-panel:1px;
+
+  /* Godot draws no drop shadows. Depth comes from borders and one inset scrim. */
+  --shadow-none:none;
+  --shadow-inset-well:inset 0 1px 0 rgb(232 220 192 / .04);
+  --shadow-overlay:0 0 0 1px var(--tb-ink),0 24px 64px rgb(0 0 0 / .6);
+  --shadow-lit-locked:0 0 0 1px var(--tb-locked),0 0 18px rgb(217 164 65 / .18);
+  --shadow-lit-threat:0 0 0 1px var(--tb-adversary),0 0 18px rgb(200 69 47 / .18);
+
+  --motion-fast:90ms; /* @kind other */
+  --motion-base:160ms; /* @kind other */
+  --ease-standard:linear; /* @kind other */
+}

@@ -8,7 +8,7 @@ through floors, each demanding a score threshold, and **every turn you take
 spends one box off your card for the rest of the run**.
 
 This repository is the Godot 4 prototype: the scoring resolver, the box-spend
-loop, the shared dice pool, the Adversary duel, charms, and the forge — all
+loop, the shared dice pool, the Adversary duel, charms, and the bench — all
 playable, all headless-testable.
 
 ## Running it
@@ -18,7 +18,7 @@ Requires **Godot 4.4 or newer** (standard build; no C# needed).
 ```bash
 godot --path .                      # play
 godot --headless --path . --import  # first run in a fresh checkout
-./tools/run_tests.sh                # 122 logic checks
+./tools/run_tests.sh                # 150 logic checks
 godot --headless --path . res://tests/ui_smoke.tscn      # drive the real UI
 xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots  # render every screen
 godot --headless --path . res://tools/curve_report.tscn  # balance sweeps
@@ -28,7 +28,10 @@ godot --headless --path . res://tools/curve_report.tscn  # balance sweeps
 
 ## How a floor plays
 
-1. Five dice are drawn from your pool of eight and rolled. You get two rerolls.
+1. Five dice are drawn from your pool of eight and thrown. You choose the
+   throw strength each time: soft stays in the pot, hard scatters to the
+   **rail** (which multiplies your score) and can put dice **off the table**
+   for the rest of the floor. Two rethrows.
 2. Clicking a die **locks it for the entire floor** — not the turn. It scores
    for you every turn from now on, and you roll one die fewer, forever.
 3. Writing into a box ends the turn and spends that box for the rest of the run.
@@ -51,6 +54,7 @@ Let it claim seven boxes and it takes the card.
 | Path | What is in it |
 |---|---|
 | `scripts/core/scoring.gd` | The resolver — all thirteen operators |
+| `scripts/core/throw.gd` | Throw strength, zones, collisions, stacking, losses |
 | `scripts/core/game.gd` | The run: floors, turns, duels, box spending |
 | `scripts/core/scorecard.gd` | Thirteen boxes and their states |
 | `scripts/core/dice_pool.gd`, `die.gd` | Eight named dice, locking, facets, bitterness, memory |
@@ -62,7 +66,13 @@ Let it claim seven boxes and it takes the card.
 | `scripts/ui/` | The interface, built in code |
 | `tests/`, `tools/` | Headless suite, UI smoke test, curve report |
 
-Design source of truth: [`docs/DESIGN.md`](docs/DESIGN.md).
+The look comes from the Claude Design handoff in
+[`docs/design-system/`](docs/design-system/) — palette, type, components and
+the `table_scene.html` the playing screen is a port of.
+
+Source of truth: the mechanics specification. How it is implemented, and every
+knowing departure from it: [`docs/MECHANICS.md`](docs/MECHANICS.md). The
+original vision document is kept at [`docs/DESIGN.md`](docs/DESIGN.md).
 Resolver findings and answers to the open questions: [`docs/BALANCE.md`](docs/BALANCE.md).
 
 ## Steam

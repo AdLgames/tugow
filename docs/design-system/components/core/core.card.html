@@ -1,0 +1,34 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Core" subtitle="Panel, Button, StatLabel, ThresholdBar, LogView" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><style>body{margin:0;padding:16px;background:var(--tb-background)}.lbl{font-family:var(--font-mono);font-size:10px;color:var(--tb-ink-dim);letter-spacing:.04em}</style></head><body><div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Panel, Button, StatLabel, ThresholdBar, LogView } = window.ThirteenBoxesDesignSystem_2f8d07;
+function CoreCard(){
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'var(--space-12)'}}>
+      <div style={{display:'flex',gap:'var(--space-10)',alignItems:'center',flexWrap:'wrap'}}>
+        <Button variant="action">Roll</Button>
+        <Button variant="action" disabled>No rerolls</Button>
+        <div style={{display:'flex',alignItems:'center',gap:'var(--space-10)'}}>
+          <StatLabel>Floor 5</StatLabel><StatLabel>265 / 385</StatLabel>
+          <ThresholdBar value={265} max={385} style={{width:140}} />
+          <StatLabel tone="var(--tb-adversary)">4 boxes left</StatLabel>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:'var(--space-10)',alignItems:'stretch'}}>
+        <div style={{flex:1,display:'flex',flexDirection:'column',gap:'var(--space-6)'}}>
+          <Button variant="overlay">{"Reshape a face — 1 box\nPull a die's weakest face up one pip."}</Button>
+          <Button variant="overlay" disabled>{"Pull another die into the pool — 2 boxes\nThe pool grows to 9."}</Button>
+        </div>
+        <Panel edge="adversary" style={{flex:1}}><span className="lbl">Panel · edge="adversary"</span>
+          <LogView style={{marginTop:6,maxHeight:74}} lines={["--- Floor 5 — threshold 385 ---","The Magpie announces: Sixes.","Locked Ash on 6 for the floor.","Sixes for 108. (floor 108/385)"]} />
+        </Panel>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<CoreCard />);
+</script></body></html>

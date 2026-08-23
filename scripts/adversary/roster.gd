@@ -1,12 +1,12 @@
 class_name AdversaryRoster
 extends RefCounted
-## The five opponents. The Twin and the Magpie are the ones that turn locking
+## The five opponents. The Reflection and the Magpie are the ones that turn locking
 ## into a bluffing game — they are the prototype pair.
 
 
-class Auditor extends Adversary:
+class Taxman extends Adversary:
 	func _init() -> void:
-		super(&"auditor", "The Auditor",
+		super(&"taxman", "The Taxman",
 			"Claims only upper-section boxes, methodically, low to high. Slow and honest. Brutal if ignored.")
 
 	func choose_box(_game, options: Array[int]) -> int:
@@ -51,9 +51,9 @@ class Magpie extends Adversary:
 		return values
 
 
-class Twin extends Adversary:
+class Reflection extends Adversary:
 	func _init() -> void:
-		super(&"twin", "The Twin",
+		super(&"reflection", "The Reflection",
 			"Rolls whatever you rolled last turn. Beat it by playing badly.")
 
 	func choose_box(game, options: Array[int]) -> int:
@@ -76,9 +76,9 @@ class Twin extends Adversary:
 		return game.last_player_values.duplicate()
 
 
-class Furnace extends Adversary:
+class Fire extends Adversary:
 	func _init() -> void:
-		super(&"furnace", "The Furnace",
+		super(&"fire", "The Fire",
 			"Does not claim boxes. Burns one per turn, unscored, gone. Pure clock. Cannot be denied, only outrun.")
 
 	## It burns your best remaining box — the one you were saving.
@@ -137,10 +137,10 @@ class Debtor extends Adversary:
 
 static func all() -> Array[Adversary]:
 	var out: Array[Adversary] = []
-	out.append(Auditor.new())
+	out.append(Taxman.new())
 	out.append(Magpie.new())
-	out.append(Twin.new())
-	out.append(Furnace.new())
+	out.append(Reflection.new())
+	out.append(Fire.new())
 	out.append(Debtor.new())
 	return out
 
@@ -149,17 +149,17 @@ static func all() -> Array[Adversary]:
 static func for_floor(n: int) -> Adversary:
 	match n:
 		3:
-			return Auditor.new()
+			return Taxman.new()
 		5:
 			return Magpie.new()
 		7:
-			return Twin.new()
+			return Reflection.new()
 		9:
 			return Magpie.new()
 		10:
-			return Furnace.new()
+			return Fire.new()
 		11:
-			return Twin.new()
+			return Reflection.new()
 	return Debtor.new()
 
 

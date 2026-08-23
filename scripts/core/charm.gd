@@ -30,6 +30,12 @@ func on_lock(_game, _die: Die) -> void:
 	pass
 
 
+## Change how the dice are read before the resolver sees them. Return the
+## values the categories should be scored against.
+func modify_values(_game, values: Array, _dice: Array) -> Array:
+	return values
+
+
 ## Transform the score about to be written. Return the new value.
 func modify_score(_game, _box: int, _values: Array, base: int) -> int:
 	return base

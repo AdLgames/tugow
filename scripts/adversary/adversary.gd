@@ -20,7 +20,8 @@ var _values: Array = []
 
 func _init(p_id: StringName = &"", p_name: String = "", p_blurb: String = "") -> void:
 	id = p_id
-	display_name = p_name
+	# The fiction renames the roster; the ids stay as the code knows them.
+	display_name = Lore.adversary_name(p_id, p_name)
 	blurb = p_blurb
 
 

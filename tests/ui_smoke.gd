@@ -7,8 +7,11 @@ const MAX_ACTIONS := 600
 
 var _main: Control
 var _failures: Array[String] = []
-var _forges_visited := 0
+var _benches_visited := 0
 var _confirms_taken := 0
+var _throws_by_strength := [0, 0, 0]
+var _dice_lost := 0
+var _next_strength := 0
 
 
 func _ready() -> void:
@@ -17,16 +20,17 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	# The title screen is an overlay with one button on it.
-	if not _press("Descend"):
-		_fail("no Descend button on the title screen")
+	if not _press("Sit down"):
+		_fail("no start button on the title screen")
 		return _report()
 
 	var game: Game = _main.game
+	game.dice_lost.connect(func(lost): _dice_lost += lost.size())
 	var actions := 0
 	while game.phase != Game.Phase.RUN_OVER and actions < MAX_ACTIONS:
 		actions += 1
-		if game.phase == Game.Phase.FORGE:
-			_walk_forge(game)
+		if game.phase == Game.Phase.BENCH:
+			_walk_bench(game)
 			await get_tree().process_frame
 			continue
 		_take_turn(game)
@@ -35,28 +39,36 @@ func _ready() -> void:
 	await get_tree().process_frame
 	if actions >= MAX_ACTIONS:
 		_fail("the run never ended")
-	if _forges_visited == 0:
-		_fail("never reached the forge — the floor transition is broken")
+	if _benches_visited == 0:
+		_fail("never reached the bench — the floor transition is broken")
 	if _confirms_taken == 0:
 		_fail("never went through a write confirmation")
 	if not _main._overlay.visible:
 		_fail("the run ended without a run-end screen")
-	print("UI smoke: %d actions, floor %d, total %d, %d forges, %d confirmed writes."
-		% [actions, game.floor_number, game.card.run_total, _forges_visited, _confirms_taken])
+	if _throws_by_strength.min() == 0:
+		_fail("some throw strength was never used: %s" % str(_throws_by_strength))
+	print("UI smoke: %d actions, floor %d, total %d, %d benches, %d confirmed writes, throws %s, %d dice lost."
+		% [actions, game.floor_number, game.card.run_total, _benches_visited, _confirms_taken,
+			str(_throws_by_strength), _dice_lost])
 	_report()
 
 
 func _take_turn(game: Game) -> void:
-	if not _main._roll_button.disabled:
-		_main._roll_button.pressed.emit()
-	for view in _main._dice_row.get_children():
-		if view is DieView and view.die.value >= 5 and not view.disabled:
+	# Rotate through throw strengths so every band gets exercised.
+	var strength: int = _next_strength
+	_next_strength = (_next_strength + 1) % 3
+	var button: Button = _main._throw_buttons[strength]
+	if not button.disabled:
+		button.pressed.emit()
+		_throws_by_strength[strength] += 1
+	for view in _main._die_views:
+		if view.die.value >= 5 and not view.disabled:
 			view.pressed.emit()
 			if _main._overlay.visible:
 				# The lock-out warning: this is the last free die.
-				_press("Lock it anyway")
+				_press("Stake it anyway")
 	var box := _best_box(game)
-	_main._box_rows[box].pressed.emit()
+	_main._ledger.line_pressed.emit(box)
 	if not _main._overlay.visible:
 		_fail("writing a box did not ask for confirmation")
 		return
@@ -66,15 +78,15 @@ func _take_turn(game: Game) -> void:
 		_fail("no confirm button on the write overlay")
 
 
-func _walk_forge(game: Game) -> void:
-	_forges_visited += 1
+func _walk_bench(game: Game) -> void:
+	_benches_visited += 1
 	if not _main._overlay.visible:
-		_fail("the forge did not open on floor %d" % game.floor_number)
+		_fail("the bench did not open on floor %d" % game.floor_number)
 		return
 	# Take the first affordable offer, answering whatever it asks for.
 	if game.card.open_count() > 4:
-		var offers := Forge.offers(game)
-		if not offers.is_empty() and Forge.can_afford(game, int(offers[0]["cost"])):
+		var offers := Bench.offers(game)
+		if not offers.is_empty() and Bench.can_afford(game, int(offers[0]["cost"])):
 			var boxes_before := game.card.open_count()
 			if _press(String(offers[0]["label"]).substr(0, 12)):
 				for _i in int(offers[0]["cost"]):
@@ -83,8 +95,8 @@ func _walk_forge(game: Game) -> void:
 					_press_any_button_that_is_not("Never mind")
 				if game.card.open_count() >= boxes_before:
 					_fail("a forge purchase did not cost a box")
-	if not _press("Descend to floor"):
-		_fail("no way out of the forge")
+	if not _press("On to "):
+		_fail("no way out of the bench")
 
 
 # --- Overlay driving ---------------------------------------------------------

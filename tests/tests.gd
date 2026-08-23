@@ -21,6 +21,14 @@ func _ready() -> void:
 	_test_floor_transition()
 	_test_overflow_carry()
 	_test_lock_out_guard()
+	_test_free_dice_excludes_lost()
+	_test_throw_zones()
+	_test_rail_persistence()
+	_test_collisions_and_cocking()
+	_test_underside()
+	_test_rail_multiplier()
+	_test_lost_dice_are_floor_long()
+	_test_new_charms()
 	_test_full_runs()
 	_report()
 
@@ -191,29 +199,29 @@ func _test_forge() -> void:
 	var die := game.pool.dice[0]
 	var faces_before := Array(die.faces)
 	var sacrifice: Array = [game.card.open_boxes()[0]]
-	check(Forge.apply(game, &"reshape_face", sacrifice, die.id), "the forge accepts a box")
+	check(Bench.apply(game, &"reshape_face", sacrifice, die.id), "the bench accepts a box")
 	check(Array(die.faces) != faces_before, "the die is reshaped")
 	check(game.card.open_count() == open_before - 1, "every upgrade shortens the run")
 
 	var pool_before := game.pool.dice.size()
 	var two: Array = game.card.open_boxes().slice(0, 2)
-	check(Forge.apply(game, &"ninth_die", two), "two boxes buy a ninth die")
+	check(Bench.apply(game, &"ninth_die", two), "two boxes buy a ninth die")
 	check(game.pool.dice.size() == pool_before + 1, "the pool grew")
 
-	check(not Forge.apply(game, &"ninth_die", [game.card.open_boxes()[0]]),
-		"the forge rejects the wrong price")
+	check(not Bench.apply(game, &"ninth_die", [game.card.open_boxes()[0]]),
+		"the bench rejects the wrong price")
 
 	# You can never spend your last box.
 	while game.card.open_count() > 1:
 		game.card.burn(game.card.open_boxes()[0])
-	check(not Forge.can_afford(game, 1), "the last box is not for sale")
+	check(not Bench.can_afford(game, 1), "the last box is not for sale")
 
 
 func _test_adversaries() -> void:
 	var game := Game.new()
 	game.start_run(2024)
 
-	var auditor := AdversaryRoster.Auditor.new()
+	var auditor := AdversaryRoster.Taxman.new()
 	check(auditor.declare(game) == Scoring.Box.ACES, "the auditor works low to high")
 	game.card.write_player(Scoring.Box.ACES, 1)
 	check(auditor.declare(game) == Scoring.Box.TWOS, "the auditor moves up the section")
@@ -225,13 +233,13 @@ func _test_adversaries() -> void:
 	check(target == Scoring.Box.FOUR_KIND or target == Scoring.Box.SIXES,
 		"the magpie targets what you are building")
 
-	var twin := AdversaryRoster.Twin.new()
+	var twin := AdversaryRoster.Reflection.new()
 	game.last_player_values = [1, 1, 2, 3, 1]
 	twin.declare(game)
 	check(twin._roll_toward(game, twin.declared_box) == [1, 1, 2, 3, 1],
 		"the twin wears your last roll — play badly to starve it")
 
-	var furnace := AdversaryRoster.Furnace.new()
+	var furnace := AdversaryRoster.Fire.new()
 	var burn_target := furnace.declare(game)
 	furnace.take_turn(game)
 	check(game.card.states[burn_target] == Scorecard.State.BURNED,
@@ -249,7 +257,7 @@ func _test_adversaries() -> void:
 func _test_denial() -> void:
 	var game := Game.new()
 	game.start_run(555)
-	game.adversary = AdversaryRoster.Auditor.new()
+	game.adversary = AdversaryRoster.Taxman.new()
 	game.adversary.on_duel_start(game)
 	var target := game.adversary.declare(game)
 	var denials: Array = []
@@ -259,7 +267,7 @@ func _test_denial() -> void:
 	check(not game.card.is_open(target), "the denied box is spent either way")
 
 
-## Regression: the forge opens because the phase is set before the signal fires.
+## Regression: the bench opens because the phase is set before the signal fires.
 func _test_floor_transition() -> void:
 	var game := Game.new()
 	game.start_run(11)
@@ -268,13 +276,13 @@ func _test_floor_transition() -> void:
 	game.floor_cleared.connect(func(_n, _r): phase_at_signal.append(game.phase))
 	game.floor_score = game.threshold
 	game.write_box(Scoring.Box.CHANCE)
-	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.FORGE,
-		"the forge is open when the floor-cleared signal lands")
-	check(game.phase == Game.Phase.FORGE, "clearing a floor stops for the forge")
+	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.BENCH,
+		"the bench is open when the floor-cleared signal lands")
+	check(game.phase == Game.Phase.BENCH, "clearing a floor stops for the bench")
 
 	var floor_before := game.floor_number
-	game.leave_forge()
-	check(game.floor_number == floor_before + 1, "leaving the forge descends")
+	game.leave_bench()
+	check(game.floor_number == floor_before + 1, "leaving the bench descends")
 	check(game.threshold > 0 and game.rerolls_left == Balance.rerolls_per_turn, "the next floor resets the turn")
 	check(game.pool.locked_count() == 0, "a new floor unlocks every die")
 	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
@@ -288,7 +296,7 @@ func _test_overflow_carry() -> void:
 	game.floor_score = game.threshold + 40
 	game._bank_overflow()
 	check(game.pending_carry == 40, "the overshoot banks")
-	game.leave_forge() if game.phase == Game.Phase.FORGE else game.next_floor()
+	game.leave_bench() if game.phase == Game.Phase.BENCH else game.next_floor()
 	check(game.floor_carry_in == 40 and game.floor_score == 40, "it opens the next floor")
 	check(game.pending_carry == 0, "and is spent once")
 
@@ -305,7 +313,7 @@ func _test_overflow_carry() -> void:
 	duel.start_run(23)
 	duel.floor_carry_in = 500
 	duel.floor_score = 500
-	duel.adversary = AdversaryRoster.Auditor.new()
+	duel.adversary = AdversaryRoster.Taxman.new()
 	duel.adversary.duel_score = 100
 	duel.threshold = 400
 	duel._clear_floor()
@@ -313,6 +321,19 @@ func _test_overflow_carry() -> void:
 
 
 ## Locking your last free die freezes the floor — the UI must be able to warn.
+## Lost dice are not throwable, and the throw controls must agree.
+func _test_free_dice_excludes_lost() -> void:
+	var game := Game.new()
+	game.start_run(4141)
+	var before := game.free_dice_on_table()
+	game.pool.table[0].lost = true
+	check(game.free_dice_on_table() == before - 1, "a lost die is not a throwable die")
+	check(game.can_throw(), "the rest of the table can still be thrown")
+	for d in game.pool.table:
+		d.lost = true
+	check(not game.can_throw(), "an empty table cannot be thrown")
+
+
 func _test_lock_out_guard() -> void:
 	var game := Game.new()
 	game.start_run(31)
@@ -331,6 +352,184 @@ func _test_lock_out_guard() -> void:
 	check(game.free_dice_on_table() == 0, "and locking it freezes the table")
 
 
+# --- The throw ---------------------------------------------------------------
+
+func _make_dice(n: int, rng: RandomNumberGenerator) -> Array[Die]:
+	var out: Array[Die] = []
+	for i in n:
+		out.append(Die.new(i, "D%d" % i, rng))
+	return out
+
+
+func _test_throw_zones() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+
+	# Soft: clustered, safe, never reaches the rail.
+	var soft_rail := 0
+	var soft_lost := 0
+	for _i in 200:
+		var dice := _make_dice(5, rng)
+		var result := Throw.resolve(dice, Throw.Strength.SOFT, rng)
+		soft_rail += Throw.rail_count(dice)
+		soft_lost += result.lost.size()
+	check(soft_rail == 0, "a soft throw never reaches the rail")
+	check(soft_lost == 0, "a soft throw never loses a die")
+
+	# Medium: some rail, no losses.
+	var medium_rail := 0
+	var medium_lost := 0
+	for _i in 200:
+		var dice := _make_dice(5, rng)
+		var result := Throw.resolve(dice, Throw.Strength.MEDIUM, rng)
+		medium_rail += Throw.rail_count(dice)
+		medium_lost += result.lost.size()
+	check(medium_rail > 0, "a medium throw reaches the rail")
+	check(medium_lost == 0, "a medium throw does not put dice off the table")
+
+	# Hard: wide scatter, real risk.
+	var hard_rail := 0
+	var hard_lost := 0
+	for _i in 200:
+		var dice := _make_dice(5, rng)
+		var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
+		hard_rail += Throw.rail_count(dice)
+		hard_lost += result.lost.size()
+	check(hard_rail > medium_rail, "a hard throw hits the rail more often")
+	check(hard_lost > 0, "a hard throw loses dice off the table")
+
+
+func _test_rail_persistence() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	# A die resting on the rail is shoved outward by the next throw.
+	var dice := _make_dice(2, rng)
+	dice[0].value = 6
+	dice[0].landing_radius = 0.95
+	dice[0].zone = Throw.Zone.RAIL
+	var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
+	check(dice[0].lost and result.pushed_off.has(dice[0]),
+		"a hard throw shoves a rail die off the table")
+
+	# Unless it was locked: locked dice cannot be lost.
+	var safe := _make_dice(2, rng)
+	safe[0].value = 6
+	safe[0].landing_radius = 0.95
+	safe[0].zone = Throw.Zone.RAIL
+	safe[0].lock()
+	Throw.resolve(safe, Throw.Strength.HARD, rng)
+	check(not safe[0].lost, "a locked die cannot be pushed off")
+	check(safe[0].value == 6, "a locked die keeps its face through a throw")
+
+	# Or unless you have the Long Throw.
+	var charmed := _make_dice(2, rng)
+	charmed[0].value = 6
+	charmed[0].landing_radius = 0.95
+	charmed[0].zone = Throw.Zone.RAIL
+	Throw.resolve(charmed, Throw.Strength.HARD, rng, true)
+	check(not charmed[0].lost, "Long Throw keeps hard throws on the table")
+
+
+func _test_collisions_and_cocking() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	# Dice landing close together knock each other to new faces.
+	var collisions := 0
+	var cocked := 0
+	for _i in 300:
+		var dice := _make_dice(5, rng)
+		var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
+		collisions += result.collisions.size()
+		cocked += result.cocked.size()
+	check(collisions > 0, "dice striking dice knock them to new faces")
+
+	# Chains propagate, but two neighbours must not rattle each other forever.
+	for _i in 300:
+		var chain_dice := _make_dice(5, rng)
+		var chain_result := Throw.resolve(chain_dice, Throw.Strength.HARD, rng)
+		var struck := {}
+		var double_hit := false
+		for c in chain_result.collisions:
+			if struck.has(c[1]):
+				double_hit = true
+			struck[c[1]] = true
+		check_once(not double_hit, "no die is struck twice in one throw")
+
+	# A cocked die counts as both its face and the one beneath it.
+	var pool := DicePool.new(2, 5)
+	pool.table = pool.dice
+	pool.dice[0].value = 5
+	pool.dice[1].value = 3
+	pool.dice[0].cocked_on = pool.dice[1].id
+	var values := pool.table_values()
+	check(values.size() == 3, "a cocked die adds a face to the table")
+	check(values.count(3) == 2, "the face beneath is read twice")
+
+
+func _test_underside() -> void:
+	var rng := RandomNumberGenerator.new()
+	var d := Die.new(0, "Under", rng)
+	d.value = 1
+	check(d.underside() == 6, "a shown 1 hides a 6")
+	d.value = 4
+	check(d.underside() == 3, "a shown 4 hides a 3")
+	# A reshaped die keeps the same relationship between its own extremes.
+	d.faces = PackedInt32Array([2, 2, 3, 4, 5, 9])
+	d.value = 9
+	check(d.underside() == 2, "a faceted die hides its lowest under its highest")
+
+
+func _test_rail_multiplier() -> void:
+	var rng := RandomNumberGenerator.new()
+	var dice := _make_dice(3, rng)
+	for d in dice:
+		d.value = 4
+		d.zone = Throw.Zone.RAIL
+	var original: int = Balance.rail_mode
+	Balance.rail_mode = Balance.RailMode.EXPONENTIAL
+	check(is_equal_approx(Throw.rail_multiplier(dice), 8.0), "exponential rail doubles per die")
+	Balance.rail_mode = Balance.RailMode.LINEAR
+	check(is_equal_approx(Throw.rail_multiplier(dice), 4.0), "linear rail adds per die")
+	Balance.rail_mode = Balance.RailMode.FLAT
+	check(is_equal_approx(Throw.rail_multiplier(dice), 2.0), "flat rail doubles once")
+	Balance.rail_mode = original
+	for d in dice:
+		d.zone = Throw.Zone.POT
+	check(is_equal_approx(Throw.rail_multiplier(dice), 1.0), "the pot does not multiply")
+
+
+func _test_lost_dice_are_floor_long() -> void:
+	var game := Game.new()
+	game.start_run(808)
+	var victim := game.pool.table[0]
+	var values_before: int = game.pool.table_values().size()
+	victim.lost = true
+	victim.zone = Throw.Zone.LOST
+	check(not game.pool.unlocked_dice().has(victim), "a lost die leaves the pool")
+	check(game.pool.table_values().size() == values_before - 1, "a lost die scores nothing")
+	game.pool.begin_floor()
+	check(not victim.lost, "the next floor brings it back")
+
+
+func _test_new_charms() -> void:
+	var game := Game.new()
+	game.start_run(909)
+	var underhand := Charms.Underhand.new()
+	var dice: Array[Die] = []
+	var rng := RandomNumberGenerator.new()
+	var low := Die.new(0, "Low", rng)
+	low.value = 1
+	var high := Die.new(1, "High", rng)
+	high.value = 5
+	dice.append(low)
+	dice.append(high)
+	var flipped := underhand.modify_values(game, [1, 5], dice)
+	check(flipped == [6, 5], "Underhand reads the hidden face of the lowest die")
+
+	game.charms.append(Charms.LongThrow.new())
+	check(game.has_charm(&"long_throw"), "Long Throw is held, and the throw reads it")
+
+
 func _test_full_runs() -> void:
 	var deepest := 0
 	var ended := 0
@@ -340,8 +539,8 @@ func _test_full_runs() -> void:
 		var guard := 0
 		while game.phase != Game.Phase.RUN_OVER and guard < 400:
 			guard += 1
-			if game.phase == Game.Phase.FORGE:
-				game.leave_forge()
+			if game.phase == Game.Phase.BENCH:
+				game.leave_bench()
 				continue
 			_greedy_turn(game)
 		check(guard < 400, "run %d terminates" % seed_value)
@@ -382,6 +581,23 @@ func _best_box(game: Game) -> Array:
 
 
 # --- Harness -----------------------------------------------------------------
+
+## For assertions inside a loop: only the first failure is worth printing.
+var _once_reported := {}
+
+func check_once(condition: bool, label: String) -> void:
+	if condition:
+		if not _once_reported.has(label):
+			_once_reported[label] = true
+			check(true, label)
+		return
+	if _once_reported.get(label, false) == "failed":
+		return
+	_once_reported[label] = "failed"
+	_checks += 1
+	_failures.append(label)
+	print("  FAIL %s" % label)
+
 
 func check(condition: bool, label: String) -> void:
 	_checks += 1

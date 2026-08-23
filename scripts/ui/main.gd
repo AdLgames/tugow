@@ -1,21 +1,28 @@
 extends Control
-## Thirteen Boxes — the whole interface, built in code so the scene file stays
-## a single node and the layout lives next to the logic it shows.
+## The saloon. A standing player looks down at a worn oval table; the man
+## across it writes on the same Ledger. Everything the player reads sits
+## either on the table (the Ledger, the dice) or on the lip in front of it.
+##
+## Built from docs/design-system/ui_kits/thirteen_boxes/table_scene.html and
+## its build brief; the layer order, palette, camera and naming come from
+## there. Game state is real — the dice sit where the throw resolver put them.
 
-const BOX_ROW_HEIGHT := 30
+const STAGE := Vector2(1920, 1080)
 
 var game: Game
 
-var _floor_label: Label
-var _progress_label: Label
-var _progress_bar: ProgressBar
-var _boxes_label: Label
-var _dice_row: HBoxContainer
-var _pool_label: Label
-var _roll_button: Button
+var _scene: SaloonView
+var _dice_layer: Control
+var _die_views: Array[DieView] = []
+var _ledger: LedgerView
+var _placard: Control
+var _night_label: Label
+var _score_label: Label
+var _meter: ProgressBar
+var _owed_label: Label
 var _hint_label: Label
-var _box_rows: Array[Button] = []
-var _box_values: Array[Label] = []
+var _throw_buttons: Array[Button] = []
+var _roll_button: Button
 var _adversary_panel: VBoxContainer
 var _charm_label: Label
 var _log_view: RichTextLabel
@@ -23,6 +30,7 @@ var _scrim: ColorRect
 var _overlay: PanelContainer
 var _overlay_title: Label
 var _overlay_body: VBoxContainer
+var _debug_panel: DebugPanel
 
 var _pending_offer: Dictionary = {}
 var _pending_sacrifices: Array[int] = []
@@ -35,69 +43,173 @@ func _ready() -> void:
 	_show_title()
 
 
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F3:
+		if _debug_panel != null:
+			_debug_panel.visible = not _debug_panel.visible
+
+
 # --- Construction ------------------------------------------------------------
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = ThemeColors.BACKGROUND
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	_scene = SaloonView.new()
+	add_child(_scene)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 12)
-	add_child(margin)
+	_dice_layer = Control.new()
+	_dice_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dice_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_dice_layer)
 
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
+	_ledger = LedgerView.new()
+	_ledger.position = Vector2(74, 418)
+	_ledger.line_pressed.connect(_on_box_pressed)
+	add_child(_ledger)
 
-	root.add_child(_build_header())
-
-	var body := HBoxContainer.new()
-	body.clip_contents = true
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 12)
-	root.add_child(body)
-
-	body.add_child(_build_scorecard())
-	body.add_child(_build_table())
-	body.add_child(_build_side())
-
+	_build_placard()
+	_build_corners()
+	_build_lip_strip()
 	_build_overlay()
 
+	# Lab tooling from the mock: layer toggles, camera pitch, lamp sliders.
+	# Debug builds only — a player never sees it.
+	if OS.is_debug_build():
+		_debug_panel = DebugPanel.new(_scene)
+		_debug_panel.visible = false
+		add_child(_debug_panel)
 
-func _build_header() -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", ThemeColors.panel_style())
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 20)
-	panel.add_child(row)
 
+## The Adversary announces its target before it throws. That declaration is a
+## physical chit on the felt, not a line of text in a corner.
+func _build_placard() -> void:
+	_placard = Control.new()
+	_placard.size = Vector2(320, 96)
+	_placard.position = Vector2(1290, 470)
+	_placard.rotation = deg_to_rad(3.4)
+	_placard.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_placard.draw.connect(_draw_placard)
+	_placard.visible = false
+	add_child(_placard)
+
+
+func _draw_placard() -> void:
+	var c := _placard
+	var rect := Rect2(Vector2.ZERO, c.size)
+	c.draw_rect(rect, ThemeColors.PAPER_MID, true)
+	c.draw_rect(rect, Color(ThemeColors.ADVERSARY, 0.55), false, 2.0)
+	var font := ThemeDB.fallback_font
+	if game == null or game.adversary == null:
+		return
+	c.draw_string(font, Vector2(16, 30), "HE CALLS", HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		Color(0.10, 0.08, 0.13, 0.65))
+	var box := game.adversary.declared_box
+	c.draw_string(font, Vector2(16, 62), Scoring.box_name(box).to_upper(),
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 20, ThemeColors.HIS_INK)
+
+
+func _build_corners() -> void:
+	# Top right: who is across the table, and what he has taken.
+	var foe_panel := PanelContainer.new()
+	foe_panel.position = Vector2(1560, 24)
+	foe_panel.size = Vector2(336, 200)
+	foe_panel.add_theme_stylebox_override("panel", ThemeColors.panel_style(ThemeColors.ADVERSARY))
+	_adversary_panel = VBoxContainer.new()
+	foe_panel.add_child(_adversary_panel)
+	add_child(foe_panel)
+
+	# Below it: the running account of the night.
+	var log_panel := PanelContainer.new()
+	log_panel.position = Vector2(1560, 236)
+	log_panel.size = Vector2(336, 300)
+	log_panel.add_theme_stylebox_override("panel", ThemeColors.panel_style())
+	var log_column := VBoxContainer.new()
+	log_panel.add_child(log_column)
+	_charm_label = Label.new()
+	_charm_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_charm_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
+	log_column.add_child(_charm_label)
+	_log_view = RichTextLabel.new()
+	_log_view.scroll_following = true
+	_log_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_view.add_theme_color_override("default_color", ThemeColors.INK_DIM)
+	log_column.add_child(_log_view)
+	add_child(log_panel)
+
+
+## The lip strip: brand, the night's state, and the draw.
+func _build_lip_strip() -> void:
+	var strip := HBoxContainer.new()
+	strip.position = Vector2(60, 900)
+	strip.size = Vector2(1800, 140)
+	strip.alignment = BoxContainer.ALIGNMENT_BEGIN
+	strip.add_theme_constant_override("separation", 28)
+	add_child(strip)
+
+	var brand := HBoxContainer.new()
+	brand.add_theme_constant_override("separation", 16)
+	var mark := TextureRect.new()
+	if ResourceLoader.exists("res://icon.svg"):
+		mark.texture = load("res://icon.svg")
+	mark.custom_minimum_size = Vector2(34, 34)
+	mark.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	brand.add_child(mark)
 	var title := Label.new()
 	title.text = "THIRTEEN BOXES"
+	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", ThemeColors.INK)
-	title.add_theme_font_size_override("font_size", 20)
-	row.add_child(title)
+	brand.add_child(title)
+	strip.add_child(brand)
 
-	_floor_label = _stat_label(row, "Floor —")
-	_progress_label = _stat_label(row, "0 / 0")
+	_night_label = _stat(strip, Lore.night(1))
+	_score_label = _stat(strip, "0 / 0")
+	_meter = ProgressBar.new()
+	_meter.custom_minimum_size = Vector2(220, 16)
+	_meter.show_percentage = false
+	strip.add_child(_meter)
+	_owed_label = _stat(strip, Lore.lines_owed(13))
 
-	_progress_bar = ProgressBar.new()
-	_progress_bar.custom_minimum_size = Vector2(140, 18)
-	_progress_bar.show_percentage = false
-	_progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(_progress_bar)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.add_child(gap)
 
-	_boxes_label = _stat_label(row, "13 boxes left")
-	return panel
+	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(190, 56)
+		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
+		button.add_theme_color_override("font_color", ThemeColors.INK)
+		button.add_theme_stylebox_override("normal", _draw_button_style(0.35))
+		button.add_theme_stylebox_override("hover", _draw_button_style(1.0))
+		button.add_theme_stylebox_override("pressed", _draw_button_style(1.0))
+		button.add_theme_stylebox_override("disabled", _draw_button_style(0.12))
+		button.pressed.connect(_on_throw_pressed.bind(strength))
+		button.mouse_entered.connect(_on_throw_hovered.bind(strength))
+		strip.add_child(button)
+		_throw_buttons.append(button)
+	_roll_button = _throw_buttons[Throw.Strength.MEDIUM]
+
+	_hint_label = Label.new()
+	_hint_label.position = Vector2(360, 1040)
+	_hint_label.size = Vector2(1200, 34)
+	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
+	add_child(_hint_label)
 
 
-func _stat_label(parent: Node, text: String) -> Label:
+## The mock's .rollbtn: raised panel, gold edge that lifts on hover.
+func _draw_button_style(edge_alpha: float) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("231f2d")
+	box.border_color = Color(ThemeColors.LOCKED, edge_alpha)
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(4)
+	box.content_margin_left = 18
+	box.content_margin_right = 18
+	box.content_margin_top = 10
+	box.content_margin_bottom = 10
+	return box
+
+
+func _stat(parent: Node, text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
@@ -105,147 +217,17 @@ func _stat_label(parent: Node, text: String) -> Label:
 	return label
 
 
-func _build_scorecard() -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", ThemeColors.panel_style())
-	panel.custom_minimum_size = Vector2(320, 0)
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.size_flags_stretch_ratio = 0.95
-
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 2)
-	panel.add_child(column)
-
-	var heading := Label.new()
-	heading.text = "THE CARD"
-	heading.add_theme_color_override("font_color", ThemeColors.INK)
-	column.add_child(heading)
-
-	for box in Scoring.BOX_COUNT:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		column.add_child(row)
-
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(228, BOX_ROW_HEIGHT)
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.focus_mode = Control.FOCUS_NONE
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.pressed.connect(_on_box_pressed.bind(box))
-		row.add_child(button)
-		_box_rows.append(button)
-
-		var value := Label.new()
-		value.custom_minimum_size = Vector2(70, BOX_ROW_HEIGHT)
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(value)
-		_box_values.append(value)
-
-	return panel
-
-
-func _build_table() -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", ThemeColors.panel_style())
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.size_flags_stretch_ratio = 1.4
-
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 10)
-	panel.add_child(column)
-
-	var heading := Label.new()
-	heading.text = "THE TABLE — click a die to lock it for the floor"
-	heading.add_theme_color_override("font_color", ThemeColors.INK)
-	column.add_child(heading)
-
-	var spacer_top := Control.new()
-	spacer_top.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(spacer_top)
-
-	_dice_row = HBoxContainer.new()
-	_dice_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_dice_row.add_theme_constant_override("separation", 8)
-	column.add_child(_dice_row)
-
-	_pool_label = Label.new()
-	_pool_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_pool_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_pool_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
-	column.add_child(_pool_label)
-
-	var controls := HBoxContainer.new()
-	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 12)
-	column.add_child(controls)
-
-	_roll_button = Button.new()
-	_roll_button.custom_minimum_size = Vector2(200, 42)
-	_roll_button.text = "Roll"
-	_roll_button.pressed.connect(_on_roll_pressed)
-	controls.add_child(_roll_button)
-
-	_hint_label = Label.new()
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint_label.custom_minimum_size = Vector2(0, 44)
-	_hint_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
-	column.add_child(_hint_label)
-
-	var spacer_bottom := Control.new()
-	spacer_bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(spacer_bottom)
-
-	return panel
-
-
-func _build_side() -> Control:
-	var column := VBoxContainer.new()
-	column.custom_minimum_size = Vector2(280, 0)
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_stretch_ratio = 0.85
-	column.add_theme_constant_override("separation", 10)
-
-	var adversary_box := PanelContainer.new()
-	adversary_box.add_theme_stylebox_override("panel", ThemeColors.panel_style(ThemeColors.ADVERSARY))
-	_adversary_panel = VBoxContainer.new()
-	adversary_box.add_child(_adversary_panel)
-	column.add_child(adversary_box)
-
-	var charm_box := PanelContainer.new()
-	charm_box.add_theme_stylebox_override("panel", ThemeColors.panel_style())
-	_charm_label = Label.new()
-	_charm_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_charm_label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
-	charm_box.add_child(_charm_label)
-	column.add_child(charm_box)
-
-	var log_box := PanelContainer.new()
-	log_box.add_theme_stylebox_override("panel", ThemeColors.panel_style())
-	log_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_log_view = RichTextLabel.new()
-	_log_view.scroll_following = true
-	_log_view.bbcode_enabled = false
-	_log_view.add_theme_color_override("default_color", ThemeColors.INK_DIM)
-	log_box.add_child(_log_view)
-	column.add_child(log_box)
-
-	return column
-
-
 func _build_overlay() -> void:
 	_scrim = ColorRect.new()
 	_scrim.color = Color(0, 0, 0, 0.6)
 	_scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_scrim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scrim.visible = false
 	add_child(_scrim)
 
 	_overlay = PanelContainer.new()
 	_overlay.set_anchors_preset(Control.PRESET_CENTER)
 	_overlay.add_theme_stylebox_override("panel", ThemeColors.panel_style(ThemeColors.INK))
-	_overlay.custom_minimum_size = Vector2(560, 0)
+	_overlay.custom_minimum_size = Vector2(660, 0)
 	_overlay.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_overlay.grow_vertical = Control.GROW_DIRECTION_BOTH
 	add_child(_overlay)
@@ -265,8 +247,6 @@ func _build_overlay() -> void:
 	column.add_child(_overlay_body)
 
 
-## The overlay is modal: whatever is behind it is not clickable and should
-## not look like it is.
 func _set_overlay_visible(shown: bool) -> void:
 	_overlay.visible = shown
 	_scrim.visible = shown
@@ -276,13 +256,13 @@ func _set_overlay_visible(shown: bool) -> void:
 
 func _show_title() -> void:
 	_clear_overlay("THIRTEEN BOXES")
-	_overlay_text("A dice roguelike where the scorecard is your health bar.")
-	_overlay_text("Thirteen boxes. Every turn spends one, permanently, for the rest of the run. Clear a floor fast and you carry the rest forward.")
-	_overlay_text("Locked is locked for the whole floor, not the turn.")
+	_overlay_text("A dice roguelike where the ledger is your health bar.")
+	_overlay_text("Thirteen lines. Every turn settles one, permanently, for the rest of the run. Clear a night fast and you carry the rest forward.")
+	_overlay_text("Staked is staked for the whole night, not the draw.")
 	var meta: Dictionary = RunState.meta
-	_overlay_text("Runs: %d   Deepest floor: %d   Best total: %d"
+	_overlay_text("Runs: %d   Deepest night: %d   Best total: %d"
 		% [int(meta["runs"]), int(meta["deepest_floor"]), int(meta["best_total"])])
-	_overlay_button("Descend", _start_run)
+	_overlay_button("Sit down", _start_run)
 	_set_overlay_visible(true)
 
 
@@ -292,6 +272,9 @@ func _start_run() -> void:
 	game.log_emitted.connect(_on_log)
 	game.run_ended.connect(_on_run_ended)
 	game.floor_cleared.connect(_on_floor_cleared)
+	game.thrown.connect(_on_thrown)
+	_ledger.bind(game)
+	_scene.pool = game.pool
 	_log_view.text = ""
 	for line in game.log_lines:
 		_on_log(line)
@@ -300,20 +283,26 @@ func _start_run() -> void:
 
 
 func _on_floor_cleared(_floor_number: int, _reclaimed: Array) -> void:
-	if game.phase == Game.Phase.FORGE:
-		_show_forge()
+	if game.phase == Game.Phase.BENCH:
+		_show_bench()
+
+
+func _on_thrown(_result: Throw.Result) -> void:
+	_refresh()
+	for i in _die_views.size():
+		_die_views[i].tumble(i * 0.055)
 
 
 func _on_run_ended(won: bool, reason: String) -> void:
-	_clear_overlay("You walked out." if won else "The run ends.")
+	_clear_overlay("You walked out." if won else "The night ends.")
 	_overlay_text(reason)
-	_overlay_text("Run total: %d over %d floor%s."
+	_overlay_text("Run total: %d over %d night%s."
 		% [game.card.run_total, game.floor_number, "" if game.floor_number == 1 else "s"])
 	var scratched := 0
 	for box in game.card.player_boxes():
 		if game.card.points[box] == 0:
 			scratched += 1
-	_overlay_text("The card: %d yours, %d taken, %d burned, %d never spent. %d of yours were scratches."
+	_overlay_text("The Ledger: %d yours, %d his, %d burned, %d never settled. %d of yours were struck through."
 		% [
 			game.card.count_state(Scorecard.State.PLAYER),
 			game.card.count_state(Scorecard.State.ADVERSARY),
@@ -322,39 +311,38 @@ func _on_run_ended(won: bool, reason: String) -> void:
 			scratched,
 		])
 	var meta: Dictionary = RunState.meta
-	_overlay_text("Best total: %d   Deepest floor: %d" % [int(meta["best_total"]), int(meta["deepest_floor"])])
+	_overlay_text("Best total: %d   Deepest night: %d" % [int(meta["best_total"]), int(meta["deepest_floor"])])
 	_overlay_button("Again", _start_run)
 	_set_overlay_visible(true)
 
 
-# --- The forge ---------------------------------------------------------------
+# --- The Assayer's Office ----------------------------------------------------
 
-func _show_forge() -> void:
+func _show_bench() -> void:
 	_pending_offer = {}
 	_pending_sacrifices.clear()
-	_clear_overlay("THE FORGE")
-	_overlay_text("Floor %d cleared in %d turns. The only currency is your scorecard: %d boxes left."
-		% [game.floor_number, game.floor_turn, game.card.open_count()])
+	_clear_overlay(Lore.BENCH.to_upper())
+	_overlay_text("%s cleared in %d draws. The only currency is your Ledger: %s."
+		% [Lore.night(game.floor_number), game.floor_turn, Lore.lines_owed(game.card.open_count())])
 	if game.pending_carry > 0:
-		_overlay_text("You overshot; %d points carry into the next floor." % game.pending_carry)
+		_overlay_text("You overshot; %d carries into the next night." % game.pending_carry)
 	var charm_names: Array[String] = []
 	for c in game.charms:
 		charm_names.append(c.charm_name)
 	if not charm_names.is_empty():
 		_overlay_text("Charms: %s" % ", ".join(charm_names))
-	for offer in Forge.offers(game):
-		var affordable: bool = Forge.can_afford(game, int(offer["cost"]))
-		var label := "%s — %d box%s\n%s" % [
-			offer["label"], int(offer["cost"]),
-			"" if int(offer["cost"]) == 1 else "es", offer["detail"],
+	for offer in Bench.offers(game):
+		var cost := int(offer["cost"])
+		var label := "%s — %d %s\n%s" % [
+			offer["label"], cost, Lore.BOX if cost == 1 else Lore.BOXES, offer["detail"],
 		]
-		var button := _overlay_button(label, _on_forge_offer.bind(offer))
-		button.disabled = not affordable
-	_overlay_button("Descend to floor %d" % (game.floor_number + 1), _leave_forge)
+		var button := _overlay_button(label, _on_bench_offer.bind(offer))
+		button.disabled = not Bench.can_afford(game, cost)
+	_overlay_button("On to %s" % Lore.night(game.floor_number + 1), _leave_bench)
 	_set_overlay_visible(true)
 
 
-func _on_forge_offer(offer: Dictionary) -> void:
+func _on_bench_offer(offer: Dictionary) -> void:
 	_pending_offer = offer
 	_pending_sacrifices.clear()
 	_ask_for_sacrifice()
@@ -365,66 +353,73 @@ func _ask_for_sacrifice() -> void:
 	if _pending_sacrifices.size() >= cost:
 		_ask_for_target()
 		return
+	var remaining := cost - _pending_sacrifices.size()
 	_clear_overlay(String(_pending_offer["label"]))
-	_overlay_text("Sacrifice %d more box%s. This is permanent."
-		% [cost - _pending_sacrifices.size(), "" if cost - _pending_sacrifices.size() == 1 else "es"])
+	_overlay_text("Give up %d more %s. This is permanent."
+		% [remaining, Lore.BOX if remaining == 1 else Lore.BOXES])
 	for box in game.card.open_boxes():
 		if _pending_sacrifices.has(box):
 			continue
 		_overlay_button("%s — %s" % [Scoring.box_name(box), Scoring.box_rule(box)], func() -> void:
 			_pending_sacrifices.append(box)
 			_ask_for_sacrifice())
-	_overlay_button("Never mind", _show_forge)
+	_overlay_button("Never mind", _show_bench)
 
 
 func _ask_for_target() -> void:
 	var target: String = _pending_offer["target"]
 	match target:
 		"none":
-			_apply_forge(-1)
+			_apply_bench(-1)
 		"die":
 			_clear_overlay("Which die?")
 			for d in game.pool.dice:
-				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_forge.bind(d.id))
-			_overlay_button("Never mind", _show_forge)
+				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_bench.bind(d.id))
+			_overlay_button("Never mind", _show_bench)
 		"bitter_die":
 			_clear_overlay("Which bitter die?")
 			for d in game.pool.dice:
 				if d.bitter:
-					_overlay_button(d.die_name, _apply_forge.bind(d.id))
-			_overlay_button("Never mind", _show_forge)
+					_overlay_button(d.die_name, _apply_bench.bind(d.id))
+			_overlay_button("Never mind", _show_bench)
 		"filled_box":
-			_clear_overlay("Which box do you hate?")
+			_clear_overlay("Which line do you hate?")
 			for box in game.card.player_boxes():
-				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_forge.bind(box))
-			_overlay_button("Never mind", _show_forge)
+				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_bench.bind(box))
+			_overlay_button("Never mind", _show_bench)
 
 
-func _apply_forge(target: int) -> void:
-	Forge.apply(game, _pending_offer["id"], _pending_sacrifices, target)
-	_show_forge()
+func _apply_bench(target: int) -> void:
+	Bench.apply(game, _pending_offer["id"], _pending_sacrifices, target)
+	_show_bench()
 
 
-func _leave_forge() -> void:
+func _leave_bench() -> void:
 	_set_overlay_visible(false)
-	game.leave_forge()
+	game.leave_bench()
 	_refresh()
 
 
 # --- Input -------------------------------------------------------------------
 
-func _on_roll_pressed() -> void:
-	game.roll()
+func _on_throw_pressed(strength: int) -> void:
+	game.throw(strength)
+
+
+func _on_throw_hovered(strength: int) -> void:
+	if _scene != null:
+		_scene.preview_strength = strength
+		_scene.queue_redraw()
 
 
 func _on_die_pressed(die: Die) -> void:
 	if not game.would_lock_out(die):
 		game.lock_die(die)
 		return
-	_clear_overlay("Lock %s — your last free die?" % die.die_name)
-	_overlay_text("Every die on the table would be locked for the rest of the floor. There is nothing left to reroll: every remaining turn scores exactly %s, and only the box you write changes."
+	_clear_overlay("Stake %s — your last free die?" % die.die_name)
+	_overlay_text("Every die on the table would be staked for the rest of the night. There is nothing left to throw: every remaining draw scores exactly %s, and only the line you settle changes."
 		% str(game.table_values()))
-	_overlay_button("Lock it anyway", func() -> void:
+	_overlay_button("Stake it anyway", func() -> void:
 		_set_overlay_visible(false)
 		game.lock_die(die)
 		_refresh())
@@ -442,14 +437,14 @@ func _on_box_pressed(box: int) -> void:
 	if value > 0:
 		_overlay_text("%s on %s." % [Scoring.box_rule(box), str(game.table_values())])
 	else:
-		_overlay_text("These dice do not meet %s. Writing it now scratches the box for nothing — a sacrifice, not a mistake."
+		_overlay_text("These dice do not meet %s. Settling it now strikes the line through for nothing — a sacrifice, not a mistake."
 			% Scoring.box_name(box))
 	if game.adversary != null and box == game.adversary.declared_box:
-		_overlay_text("This is the box %s announced. Taking it denies the claim."
-			% game.adversary.display_name)
-	_overlay_text("The box is spent for the rest of the run. %d would remain."
-		% (game.card.open_count() - 1))
-	_overlay_text("Floor: %d + %d = %d of %d." % [game.floor_score, value, game.floor_score + value, game.threshold])
+		_overlay_text("This is the line %s called. Taking it denies him." % game.adversary.display_name)
+	_overlay_text("The line is settled for the rest of the run. %s would remain."
+		% Lore.lines_owed(game.card.open_count() - 1))
+	_overlay_text("%s: %d + %d = %d of %d."
+		% [Lore.night(game.floor_number), game.floor_score, value, game.floor_score + value, game.threshold])
 	_overlay_button("Write it", func() -> void:
 		_set_overlay_visible(false)
 		game.write_box(box)
@@ -465,100 +460,73 @@ func _on_box_pressed(box: int) -> void:
 func _refresh() -> void:
 	if game == null:
 		return
-	_floor_label.text = "Floor %d" % game.floor_number
-	_progress_label.text = "%d / %d" % [game.floor_score, game.threshold]
+	_night_label.text = Lore.night(game.floor_number)
+	_score_label.text = "%d / %d" % [game.floor_score, game.threshold]
 	if game.floor_carry_in > 0:
-		_progress_label.text += "  (%d carried)" % game.floor_carry_in
-	_progress_bar.max_value = maxf(1.0, float(game.threshold))
-	_progress_bar.value = minf(float(game.floor_score), _progress_bar.max_value)
-	_boxes_label.text = "%d boxes left" % game.card.open_count()
+		_score_label.text += "  (%d carried)" % game.floor_carry_in
+	_meter.max_value = maxf(1.0, float(game.threshold))
+	_meter.value = minf(float(game.floor_score), _meter.max_value)
+	_owed_label.text = Lore.lines_owed(game.card.open_count())
 
+	_scene.pool = game.pool
+	_scene.adversary_present = game.adversary != null
 	_refresh_dice()
-	_refresh_pool()
-	_refresh_card()
+	_ledger.queue_redraw()
 	_refresh_adversary()
+	_refresh_throw_buttons()
 
 	var charm_names: Array[String] = []
 	for c in game.charms:
 		charm_names.append(c.charm_name)
 	_charm_label.text = "Charms: %s" % ("none yet" if charm_names.is_empty() else ", ".join(charm_names))
-
-	var frozen := game.free_dice_on_table() == 0
-	_roll_button.disabled = game.phase != Game.Phase.TURN or game.rerolls_left <= 0 or frozen
-	if frozen:
-		_roll_button.text = "Every die is locked"
-	elif game.rerolls_left > 0:
-		var free := game.free_dice_on_table()
-		_roll_button.text = "Reroll %d %s (%d left)" % [
-			free, "die" if free == 1 else "dice", game.rerolls_left,
-		]
-	else:
-		_roll_button.text = "No rerolls left"
 	_hint_label.text = _hint()
 
+	_placard.visible = game.adversary != null and game.adversary.declared_box >= 0
+	_placard.queue_redraw()
 
+
+## Dice sit where the throw resolver put them, scaled by how near they landed.
 func _refresh_dice() -> void:
-	for child in _dice_row.get_children():
-		child.queue_free()
+	for view in _die_views:
+		view.queue_free()
+	_die_views.clear()
 	for d in game.pool.table:
+		if d.lost:
+			continue
 		var view := DieView.new()
-		_dice_row.add_child(view)
+		_dice_layer.add_child(view)
 		view.bind(d)
+		var factor := _scene.die_scale(d)
+		view.scale = Vector2(factor, factor)
+		view.position = _scene.die_position(d) - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
+		view.sway_left = _scene.sway_left
+		view.sway_right = _scene.sway_right
 		view.pressed.connect(_on_die_pressed.bind(d))
+		_die_views.append(view)
 
 
-## The pool is eight named individuals; the table only ever shows five of them.
-func _refresh_pool() -> void:
-	var parts: Array[String] = []
-	for d in game.pool.dice:
-		var tags: Array[String] = []
-		if d.locked:
-			tags.append("locked by %s" % d.locked_by)
-		if d.bitter:
-			tags.append("bitter")
-		if Array(d.faces) != [1, 2, 3, 4, 5, 6]:
-			tags.append(str(Array(d.faces)))
-		if d.lock_scores > 0 and not d.locked:
-			tags.append("%d/%d to facet" % [d.lock_scores % Balance.facet_threshold, Balance.facet_threshold])
-		parts.append(d.die_name if tags.is_empty() else "%s (%s)" % [d.die_name, ", ".join(tags)])
-	_pool_label.text = "THE POOL — %s" % "   ".join(parts)
-
-
-func _refresh_card() -> void:
-	var declared := -1
-	if game.adversary != null:
-		declared = game.adversary.declared_box
-	var best_preview := 0
-	if game.phase == Game.Phase.TURN:
-		for box in game.card.open_boxes():
-			best_preview = maxi(best_preview, game.preview(box))
-	for box in Scoring.BOX_COUNT:
-		var button := _box_rows[box]
-		var value := _box_values[box]
-		var open := game.card.is_open(box)
-		button.disabled = not open or game.phase != Game.Phase.TURN
-		var marker := "> " if box == declared and open else "  "
-		button.text = "%s%s  %s" % [marker, Scoring.box_name(box), Scoring.box_rule(box)]
-		var colour := ThemeColors.for_state(game.card.states[box])
-		if box == declared and open:
-			colour = ThemeColors.DECLARED
-		button.add_theme_color_override("font_color", colour)
-		button.add_theme_color_override("font_disabled_color", colour)
-		button.add_theme_color_override("font_hover_color", ThemeColors.LOCKED)
-		if open:
-			var preview := game.preview(box) if game.phase == Game.Phase.TURN else 0
-			value.text = str(preview)
-			var tone := ThemeColors.INK_DIM
-			if preview <= 0:
-				tone = ThemeColors.BURNED
-			elif preview == best_preview:
-				tone = ThemeColors.LOCKED
-			elif preview > 0:
-				tone = ThemeColors.INK
-			value.add_theme_color_override("font_color", tone)
+func _refresh_throw_buttons() -> void:
+	var frozen := not game.can_throw()
+	var throws_left := game.rerolls_left
+	var free := game.free_dice_on_table()
+	for strength in _throw_buttons.size():
+		var button := _throw_buttons[strength]
+		button.disabled = game.phase != Game.Phase.TURN or throws_left <= 0 or frozen
+		if frozen:
+			button.text = "Every die staked"
+		elif throws_left <= 0:
+			button.text = "No draws left"
 		else:
-			value.text = "%s %d" % [game.card.state_tag(box), game.card.points[box]]
-			value.add_theme_color_override("font_color", colour)
+			button.text = "%s\n%s — %d %s" % [
+				Lore.THROW, Throw.strength_name(strength).to_lower(),
+				free, "die" if free == 1 else "dice",
+			]
+		var tint := ThemeColors.INK
+		if strength == Throw.Strength.HARD:
+			tint = ThemeColors.ADVERSARY
+		elif strength == Throw.Strength.SOFT:
+			tint = ThemeColors.PLAYER
+		button.add_theme_color_override("font_color", tint)
 
 
 func _refresh_adversary() -> void:
@@ -566,21 +534,20 @@ func _refresh_adversary() -> void:
 		child.queue_free()
 	var heading := Label.new()
 	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	heading.custom_minimum_size = Vector2(0, 0)
 	heading.add_theme_color_override("font_color", ThemeColors.ADVERSARY)
 	_adversary_panel.add_child(heading)
 	if game.adversary == null:
-		heading.text = "NO ADVERSARY"
+		heading.text = "NO ONE ACROSS THE TABLE"
 		var waiting := Label.new()
 		waiting.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		waiting.add_theme_color_override("font_color", ThemeColors.INK_DIM)
 		var next_duel := _next_duel_floor()
 		if next_duel < 0:
-			waiting.text = "Nothing else is coming for the card. Spend it as you like."
+			waiting.text = "Nothing else is coming for the Ledger."
 		else:
 			var who := AdversaryRoster.for_floor(next_duel)
-			waiting.text = "Just the threshold this floor. %s waits on floor %d."\
-				% [who.display_name, next_duel]
+			waiting.text = "Just the threshold tonight. %s sits down on %s."\
+				% [Lore.adversary_name(who.id, who.display_name), Lore.night(next_duel).to_lower()]
 		_adversary_panel.add_child(waiting)
 		return
 	heading.text = game.adversary.display_name.to_upper()
@@ -593,7 +560,7 @@ func _refresh_adversary() -> void:
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.add_theme_color_override("font_color", ThemeColors.INK)
 	var declared := game.adversary.declared_box
-	status.text = "Announced: %s\nIts score: %d   Boxes taken: %d/%d" % [
+	status.text = "Calls: %s\nHis score: %d   Lines taken: %d/%d" % [
 		Scoring.box_name(declared) if declared >= 0 else "nothing",
 		game.adversary.duel_score,
 		game.card.adversary_count(),
@@ -612,10 +579,14 @@ func _next_duel_floor() -> int:
 func _hint() -> String:
 	if game.phase != Game.Phase.TURN:
 		return ""
+	var rails := Throw.rail_count(game.pool.table)
+	if rails > 0:
+		return "%d on the rail: x%.0f on this score, but the next draw shoves %s toward the lip. Stake, or settle now."\
+			% [rails, Throw.rail_multiplier(game.pool.table), "it" if rails == 1 else "them"]
 	if game.adversary != null and game.adversary.declared_box >= 0:
-		return "Deny it by taking %s yourself, or outpace it — you need %d more."\
+		return "Deny him by taking %s yourself, or outpace him — you need %d more."\
 			% [Scoring.box_name(game.adversary.declared_box), maxi(0, game.threshold - game.floor_score)]
-	return "Writing a box ends the turn and spends it for the rest of the run. %d more to clear."\
+	return "Settling a line ends the draw and spends it for the rest of the run. %d more to clear."\
 		% maxi(0, game.threshold - game.floor_score)
 
 

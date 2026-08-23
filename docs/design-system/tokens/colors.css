@@ -1,0 +1,48 @@
+/* Thirteen Boxes palette — exact values from scripts/ui/theme_colors.gd.
+   "One palette, used everywhere. Ink on bone, with the card states colour-coded." */
+:root{
+  /* Base surfaces */
+  --tb-background:#14121a;
+  --tb-panel:#1d1a25;
+  --tb-panel-edge:#2e2a3a;
+
+  /* Ink */
+  --tb-ink:#e8dcc0;
+  --tb-ink-dim:#9a9184;
+
+  /* Card states */
+  --tb-open:#e8dcc0;
+  --tb-player:#6fae7c;
+  --tb-adversary:#c8452f;
+  --tb-burned:#55505e;
+  --tb-locked:#d9a441;
+  --tb-bitter:#9d6bd6;
+  --tb-declared:#e0703c;
+
+  /* Derived tints (alpha over --tb-background; no new hues) */
+  --tb-player-wash:rgb(111 174 124 / .12);
+  --tb-adversary-wash:rgb(200 69 47 / .12);
+  --tb-locked-wash:rgb(217 164 65 / .14);
+  --tb-declared-wash:rgb(224 112 60 / .14);
+  --tb-bitter-wash:rgb(157 107 214 / .12);
+  --tb-ink-wash:rgb(232 220 192 / .06);
+  --tb-scrim:rgb(20 18 26 / .82);
+
+  /* Semantic aliases */
+  --surface-page:var(--tb-background);
+  --surface-panel:var(--tb-panel);
+  --surface-raised:#231f2d;
+  --border-panel:var(--tb-panel-edge);
+  --border-strong:var(--tb-ink);
+  --text-body:var(--tb-ink);
+  --text-muted:var(--tb-ink-dim);
+  --text-inverse:var(--tb-background);
+  --state-mine:var(--tb-player);
+  --state-theirs:var(--tb-adversary);
+  --state-burned:var(--tb-burned);
+  --state-locked:var(--tb-locked);
+  --state-bitter:var(--tb-bitter);
+  --state-declared:var(--tb-declared);
+  --accent-threat:var(--tb-adversary);
+  --accent-gain:var(--tb-player);
+}
