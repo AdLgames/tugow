@@ -59,6 +59,18 @@ var collision_radius: float = 0.18
 var stack_radius: float = 0.05
 var max_collision_chain: int = 12
 
+## Physical throw profiles — impulse, spin and lift per strength. These are
+## the same three bands as the model's landing radii, expressed as forces.
+var throw_impulses: Dictionary = {
+	0: {"impulse": 3.4, "spin": 0.9, "spread": 0.5, "lift": 0.6},    # SOFT
+	1: {"impulse": 5.2, "spin": 1.8, "spread": 1.1, "lift": 1.0},    # MEDIUM
+	2: {"impulse": 6.2, "spin": 2.8, "spread": 1.9, "lift": 1.5},    # HARD
+}
+
+## Physics drives the visible throw; the model in throw.gd stays the headless
+## path for tests and the balance sweeps.
+var use_physics_dice: bool = true
+
 # --- Dice -------------------------------------------------------------------
 
 var pool_size: int = 8
