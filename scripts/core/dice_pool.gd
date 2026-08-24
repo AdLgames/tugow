@@ -110,16 +110,7 @@ func roll_table() -> void:
 ## What the resolver sees. Lost dice contribute nothing; a cocked die
 ## contributes both its own face and the face of the die beneath it.
 func table_values() -> Array:
-	var out: Array = []
-	for d in table:
-		if d.lost or d.value <= 0:
-			continue
-		out.append(d.value)
-		if d.cocked_on != -1:
-			var beneath := get_die(d.cocked_on)
-			if beneath != null and not beneath.lost and beneath.value > 0:
-				out.append(beneath.value)
-	return out
+	return ThrowContract.values_of(Throw.records_for(live_table()))
 
 
 func live_table() -> Array[Die]:

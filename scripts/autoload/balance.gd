@@ -37,13 +37,31 @@ enum RailMode { EXPONENTIAL, LINEAR, FLAT }
 
 var rail_mode: RailMode = RailMode.LINEAR
 
-## Landing radius band per Throw.Strength: soft never reaches the rail,
-## medium can, hard can go past the lip entirely.
-var throw_bands: Dictionary = {
-	0: Vector2(0.00, 0.45),   # SOFT
-	1: Vector2(0.10, 0.85),   # MEDIUM
-	2: Vector2(0.35, 1.18),   # HARD — about a 1-in-5 chance per die of going off
+## Where each strength puts a die, as measured from the physics sim by
+## tools/throw_tuner.tscn — pot / rail / dirt.
+##
+## The model is a calibrated stand-in for the simulation, not a second opinion
+## about it. Sampling the zone from these odds, then a radius inside that
+## zone, makes the two paths agree by construction — which is what lets the
+## balance sweeps run on the model and still describe the game the player
+## gets. Re-run the tuner and update this table after any change to the dice,
+## the table or the throw profiles.
+var zone_odds: Dictionary = {
+	0: {"pot": 0.86, "rail": 0.14, "lost": 0.00},   # SOFT
+	1: {"pot": 0.52, "rail": 0.45, "lost": 0.03},   # MEDIUM
+	2: {"pot": 0.23, "rail": 0.53, "lost": 0.24},   # HARD
 }
+
+## How often a settled die is left showing two faces at once, measured the
+## same way. A die that does not lie flat is cocked.
+var cocked_odds: float = 0.021
+
+## The furthest a strength can reach, for the interface's aim preview.
+func reach_of(strength: int) -> float:
+	var odds: Dictionary = zone_odds[strength]
+	if float(odds["lost"]) > 0.0:
+		return 1.15
+	return 1.0 if float(odds["rail"]) > 0.0 else rail_inner_radius
 
 ## How far a die already resting on the rail is shoved by the next throw.
 var rail_push: Dictionary = {
@@ -58,6 +76,18 @@ var collision_radius: float = 0.18
 ## Closer still, and one is resting on the other: cocked.
 var stack_radius: float = 0.05
 var max_collision_chain: int = 12
+
+## Physical throw profiles — impulse, spin and lift per strength. These are
+## the same three bands as the model's landing radii, expressed as forces.
+var throw_impulses: Dictionary = {
+	0: {"impulse": 3.4, "spin": 0.9, "spread": 0.5, "lift": 0.6},    # SOFT
+	1: {"impulse": 5.2, "spin": 1.8, "spread": 1.1, "lift": 1.0},    # MEDIUM
+	2: {"impulse": 6.2, "spin": 2.8, "spread": 1.9, "lift": 1.5},    # HARD
+}
+
+## Physics drives the visible throw; the model in throw.gd stays the headless
+## path for tests and the balance sweeps.
+var use_physics_dice: bool = true
 
 # --- Dice -------------------------------------------------------------------
 

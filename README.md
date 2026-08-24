@@ -18,7 +18,7 @@ Requires **Godot 4.4 or newer** (standard build; no C# needed).
 ```bash
 godot --path .                      # play
 godot --headless --path . --import  # first run in a fresh checkout
-./tools/run_tests.sh                # 150 logic checks
+./tools/run_tests.sh                # 151 logic checks
 godot --headless --path . res://tests/ui_smoke.tscn      # drive the real UI
 xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots  # render every screen
 godot --headless --path . res://tools/curve_report.tscn  # balance sweeps

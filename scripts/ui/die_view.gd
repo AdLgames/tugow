@@ -102,10 +102,15 @@ func _draw() -> void:
 	_draw_body_shading(body)
 	_draw_face(offset, scale_factor)
 	_draw_wear(offset)
+	_draw_name(offset)
+	if die.is_cocked():
+		_draw_cocked(offset)
 	if die.locked:
 		_draw_tag(Lore.LOCKED_TAG, ThemeColors.LOCKED)
 	elif die.zone == Throw.Zone.RAIL:
 		_draw_tag("RAIL x2", ThemeColors.DECLARED)
+	elif die.is_cocked():
+		_draw_tag("COCKED — BOTH FACES", ThemeColors.PLAYER)
 
 
 func _body_colour() -> Color:
@@ -163,12 +168,16 @@ func _draw_face(offset: Vector2, scale_factor: float) -> void:
 			Color(0.24, 0.19, 0.12, 0.55))
 
 
+## Wear must never make a value ambiguous: everything here stays outside the
+## pip grid and lighter than a pip, so nothing on the body can be miscounted.
 func _draw_wear(offset: Vector2) -> void:
-	# Grime under the face, never over it, and two nicked corners.
-	draw_circle(Vector2(144, 42) + offset, 20.0, Color(0.36, 0.29, 0.19, 0.10))
-	draw_circle(Vector2(32, 137) + offset, 14.0, Color(0.29, 0.23, 0.13, 0.12))
-	draw_rect(Rect2(Vector2(SIZE - 20, 26) + offset, Vector2(22, 22)), Color("5a4a30"), true)
-	draw_rect(Rect2(Vector2(-2, SIZE - 56) + offset, Vector2(22, 22)), Color("5a4a30"), true)
+	var grime := Color(0.42, 0.34, 0.22, 0.10)
+	draw_circle(Vector2(SIZE - 26, 20) + offset, 16.0, grime)
+	draw_circle(Vector2(20, SIZE - 24) + offset, 12.0, grime)
+	# Nicks ride the silhouette edge, lighter than the body, never near a pip.
+	var chip := Color(0.66, 0.57, 0.40, 0.55)
+	draw_line(Vector2(SIZE - 6, 8) + offset, Vector2(SIZE - 2, 30) + offset, chip, 3.0)
+	draw_line(Vector2(4, SIZE - 34) + offset, Vector2(1, SIZE - 12) + offset, chip, 3.0)
 
 
 func _shadow(offset: Vector2, dx: float) -> void:
@@ -180,11 +189,33 @@ func _shadow(offset: Vector2, dx: float) -> void:
 	draw_colored_polygon(points, Color(0, 0, 0, 0.38))
 
 
+## Eight named individuals, not interchangeable props.
+func _draw_name(offset: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var label := die.die_name.to_upper()
+	var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+	var at := Vector2((SIZE - width) * 0.5, -12) + offset
+	draw_string(font, at + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+		Color(0, 0, 0, 0.65))
+	draw_string(font, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+		ThemeColors.LOCKED if die.locked else ThemeColors.INK_DIM)
+
+
+## A cocked die is resting on another and counts as both faces — a major
+## state that was text in the log and nothing on the table.
+func _draw_cocked(offset: Vector2) -> void:
+	var centre := Vector2(SIZE, SIZE) * 0.5 + offset
+	draw_arc(centre, SIZE * 0.62, 0.0, TAU, 40, Color(ThemeColors.PLAYER, 0.75), 3.0)
+	draw_arc(centre, SIZE * 0.68, 0.0, TAU, 40, Color(ThemeColors.PLAYER, 0.25), 2.0)
+
+
 func _draw_tag(label: String, colour: Color) -> void:
 	var font := ThemeDB.fallback_font
-	var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-	draw_string(font, Vector2((SIZE - width) * 0.5, SIZE + 30), label,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, colour)
+	var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+	var at := Vector2((SIZE - width) * 0.5, SIZE + 32)
+	draw_string(font, at + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
+		Color(0, 0, 0, 0.7))
+	draw_string(font, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, colour)
 
 
 func _tooltip() -> String:

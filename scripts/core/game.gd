@@ -194,6 +194,8 @@ func write_box(box: int) -> void:
 	if denied:
 		log_line("Denied: you took %s out of %s's hands."
 			% [Scoring.box_name(box), adversary.display_name])
+		# The call is dead the moment the line is taken.
+		adversary.declared_box = -1
 	floor_score += value
 	if value == 0:
 		log_line("Struck out %s. A hole in the Ledger for the rest of the run." % Scoring.box_name(box))
@@ -259,6 +261,9 @@ func _clear_floor() -> void:
 			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
 				% [adversary.display_name, adversary.duel_score, earned])
 	log_line("%s cleared in %d draws. %s." % [Lore.night(floor_number), floor_turn, Lore.lines_owed(card.open_count())])
+	if adversary != null:
+		# The night is over; nothing is on call any more.
+		adversary.declared_box = -1
 	_bank_overflow()
 	if floor_number >= TOTAL_FLOORS:
 		floor_cleared.emit(floor_number, reclaimed)

@@ -24,7 +24,7 @@ func _ready() -> void:
 	# The confirm overlay: writing a box is irreversible for the whole run.
 	_main._ledger.line_pressed.emit(_best_box())
 	await _shot("03_confirm")
-	_press("Write it")
+	_hold("Hold to write it")
 
 	# Play on until the bench opens.
 	var guard := 0
@@ -69,7 +69,7 @@ func _play_one_turn() -> void:
 			if _main._overlay.visible:
 				_press("Stake it anyway")
 	_main._ledger.line_pressed.emit(_best_box())
-	_press("Write it")
+	_hold("Hold to write it")
 	await get_tree().process_frame
 
 
@@ -83,6 +83,13 @@ func _best_box() -> int:
 			best_value = v
 			best = box
 	return best
+
+
+func _hold(prefix: String) -> void:
+	for child in _main._overlay_body.get_children():
+		if child is HoldButton and child.text.begins_with(prefix):
+			child.held.emit()
+			return
 
 
 func _press(prefix: String) -> void:

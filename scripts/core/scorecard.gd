@@ -13,6 +13,10 @@ var points: Array[int] = []
 var spend_order: Array[int] = []
 ## Running total of everything the player has ever scored this run.
 var run_total: int = 0
+## Points on lines that were reclaimed. You keep what you earned, so these
+## stay in run_total after the line reopens — this is what makes the total
+## reconcilable against the card instead of merely plausible.
+var reclaimed_total: int = 0
 
 
 func _init() -> void:
@@ -24,6 +28,7 @@ func reset() -> void:
 	points.clear()
 	spend_order.clear()
 	run_total = 0
+	reclaimed_total = 0
 	for i in Scoring.BOX_COUNT:
 		states.append(State.OPEN)
 		points.append(0)
@@ -115,6 +120,10 @@ func reclaim(count: int) -> Array[int]:
 		var box: int = spend_order[i]
 		if states[box] == State.PLAYER:
 			states[box] = State.OPEN
+			# The points move to the reclaimed pile rather than lingering on
+			# an open line, where they were neither spent nor scoreable.
+			reclaimed_total += points[box]
+			points[box] = 0
 			reclaimed.append(box)
 			spend_order.remove_at(i)
 		i -= 1

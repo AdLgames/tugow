@@ -8,3 +8,5 @@ if [ ! -d "$ROOT/.godot" ]; then
   "$GODOT" --headless --path "$ROOT" --import >/dev/null 2>&1 || true
 fi
 "$GODOT" --headless --path "$ROOT" res://tests/tests.tscn
+"$GODOT" --headless --path "$ROOT" res://tests/invariants.tscn
+"$GODOT" --headless --path "$ROOT" res://tests/dice3d_tests.tscn
