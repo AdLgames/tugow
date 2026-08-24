@@ -15,6 +15,10 @@ var _next_strength := 0
 
 
 func _ready() -> void:
+	# The whole interface, driven fast. The physical throw takes real seconds
+	# to settle, so this runs on the model path and tests/physical_turn.gd
+	# covers the wiring to the simulation.
+	Balance.use_physics_dice = false
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	await get_tree().process_frame

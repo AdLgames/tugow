@@ -32,6 +32,10 @@ const SILHOUETTE := [
 ]
 
 var die: Die
+## When the physical dice are rendered underneath, this view is only the
+## name, the state tag and the hit area — the die itself is a real object in
+## the simulation and drawing a second one over it would be a lie.
+var render_body: bool = true
 var sway_left: float = 0.0
 var sway_right: float = 0.0
 
@@ -93,15 +97,23 @@ func _draw() -> void:
 	elif _hover and not die.locked:
 		offset = Vector2(0, -4)
 
-	# Two lanterns, so two shadows, drifting out of phase.
-	_shadow(offset, 40.0 - sway_left * 2.0)
-	_shadow(offset, -40.0 - sway_right * 2.0)
+	if render_body:
+		# Two lanterns, so two shadows, drifting out of phase.
+		_shadow(offset, 40.0 - sway_left * 2.0)
+		_shadow(offset, -40.0 - sway_right * 2.0)
 
-	var body := _silhouette(offset, spin, scale_factor)
-	draw_colored_polygon(body, _body_colour())
-	_draw_body_shading(body)
-	_draw_face(offset, scale_factor)
-	_draw_wear(offset)
+		var body := _silhouette(offset, spin, scale_factor)
+		draw_colored_polygon(body, _body_colour())
+		_draw_body_shading(body)
+		_draw_face(offset, scale_factor)
+		_draw_wear(offset)
+	elif die.locked or die.zone == Throw.Zone.RAIL or _hover:
+		# A ring is enough to mark a real die underneath.
+		var centre := Vector2(SIZE, SIZE) * 0.5 + offset
+		var tint := ThemeColors.LOCKED if die.locked else ThemeColors.DECLARED
+		if _hover and not die.locked:
+			tint = ThemeColors.INK
+		draw_arc(centre, SIZE * 0.48, 0.0, TAU, 40, Color(tint, 0.85), 3.0)
 	_draw_name(offset)
 	if die.is_cocked():
 		_draw_cocked(offset)

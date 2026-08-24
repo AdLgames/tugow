@@ -49,6 +49,7 @@ func begin_floor() -> void:
 		d.repeated = false
 		d.lost = false
 		d.cocked_on = -1
+		d.second_value = 0
 		d.landing_radius = 0.0
 		d.zone = Throw.Zone.POT
 	table.clear()

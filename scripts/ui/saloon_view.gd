@@ -109,6 +109,19 @@ func rolling_area() -> Rect2:
 	return rolling_bounds
 
 
+## The painted felt's bounding box on screen. The physical table is framed to
+## this so the rendered dice sit on the felt that is drawn, rather than on a
+## second table of their own.
+func felt_bounds() -> Rect2:
+	var ring := projection.ring(0.845, 48)
+	var low := ring[0]
+	var high := ring[0]
+	for point in ring:
+		low = Vector2(minf(low.x, point.x), minf(low.y, point.y))
+		high = Vector2(maxf(high.x, point.x), maxf(high.y, point.y))
+	return Rect2(low, high - low)
+
+
 ## Lay the dice out inside the rolling area with no two overlapping.
 ##
 ## Their landing positions still order them — a die that came down near the

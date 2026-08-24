@@ -12,6 +12,9 @@ func _ready() -> void:
 		if arg.begins_with("--dir="):
 			_dir = arg.substr(6)
 	DirAccess.make_dir_recursive_absolute(_dir)
+	# Physical throws settle in real seconds; the still frames come from the
+	# model path. tools/dice_shot.tscn renders the physical table.
+	Balance.use_physics_dice = false
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	await get_tree().process_frame

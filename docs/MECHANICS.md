@@ -149,6 +149,32 @@ One a night. The bench is visited once between nights, and re-rendered after
 each purchase, so a night with lines to spare could previously buy several
 charms at once. `Balance.charms_per_night` caps it.
 
+## The physical throw
+
+`Game.throw()` has two paths behind one call. With a stage attached the throw
+is physical and takes real time: the dice go up, `dice_in_the_air` locks the
+interface, and the simulation hands back contract records when the bodies
+settle. Without one — the tests, the balance sweeps, the tuner — the model
+resolves it on the spot.
+
+- `scripts/dice3d/dice_stage.gd` — a SubViewport holding the simulation, a
+  camera and lights, composited over the painted felt. Only the dice have
+  meshes: the table has collision but no geometry, so the painted felt shows
+  through and there is never a second table.
+- `scripts/dice3d/die_pips.gd` — the pip atlas, drawn at runtime into the six
+  faces a BoxMesh unwraps, so a cube reads as a die without an artist.
+- Staked dice are **set down**, not thrown. A staked die that tumbled onto a
+  new face would contradict the rule that staking holds a face for the night.
+- The simulation's bodies carry the real die ids. The table holds five of
+  eight named dice, so a body's identity comes from the game — without that a
+  face settles on one die and is read onto another.
+- The rail shove lives in `ThrowContract`, applied by the caller, so the two
+  paths cannot shove differently.
+
+The 2D die views become labels and hit areas over the rendered dice: a name, a
+state tag, and a ring when staked or on the rail. A view whose body cannot be
+located on screen hides rather than falling back to a made-up position.
+
 ## The clear felt
 
 Dice land in the region of table left over once the Ledger, the dice tray and

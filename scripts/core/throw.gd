@@ -33,16 +33,9 @@ const STRENGTH_BLURBS := {
 static func records_for(dice: Array[Die]) -> Array:
 	var records: Array = []
 	for d in dice:
-		# The model's cocked die came down on another one: it reads its own
-		# face and the face beneath, which is the same "showing two faces"
-		# the physics produces from a die that did not settle flat.
-		var second := 0
-		if d.cocked_on != -1:
-			for other in dice:
-				if other.id == d.cocked_on and not other.lost:
-					second = other.value
 		records.append(ThrowContract.record(
-			d.id, 0 if d.lost else d.value, d.landing_position(), second, d.cocked_on == -1))
+			d.id, 0 if d.lost else d.value, d.landing_position(),
+			0 if d.lost else d.second_value, d.second_value == 0))
 	return ThrowContract.derive(records)
 
 
@@ -83,22 +76,8 @@ static func resolve(dice: Array[Die], strength: int, rng: RandomNumberGenerator,
 	var result := Result.new()
 	result.strength = strength
 
-	# 1. Dice already resting on the rail are pushed outward before anything
-	#    else lands. This is what makes taking a rail double a real risk: you
-	#    either lock it, score it now, or gamble it on the next throw.
-	for d in dice:
-		if d.lost or d.locked or d.zone != Zone.RAIL:
-			continue
-		d.landing_radius += _push_for(strength)
-		if d.landing_radius > 1.0:
-			if long_throw:
-				d.landing_radius = 0.98
-				continue
-			_lose(d)
-			result.pushed_off.append(d)
-			result.lost.append(d)
-	_prune_lost(dice)
-
+	# The rail shove is applied by the caller through ThrowContract, so that
+	# the physical path and this one cannot apply it differently.
 	# 2. Throw everything that is free to move.
 	for d in dice:
 		if d.lost or d.locked:
@@ -240,6 +219,7 @@ static func _resolve_stacks(dice: Array[Die], result: Result, rng: RandomNumberG
 		if d.lost or d.locked:
 			continue
 		d.cocked_on = -1
+		d.second_value = 0
 		if rng.randf() >= Balance.cocked_odds:
 			continue
 		# It is leaning: the second face is a neighbour of the one on top,
@@ -250,6 +230,7 @@ static func _resolve_stacks(dice: Array[Die], result: Result, rng: RandomNumberG
 			if other.value + d.value == 7:
 				continue
 			d.cocked_on = other.id
+			d.second_value = other.value
 			result.cocked.append(d)
 			break
 

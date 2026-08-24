@@ -38,9 +38,12 @@ var landing_angle: float = 0.0
 var zone: int = 0
 ## Gone for the rest of the floor.
 var lost: bool = false
-## Id of the die this one is resting on, or -1. A cocked die counts as both
-## its own face and the face beneath it.
+## Id of the die this one came down on, or -1. Kept for the log and the
+## model's own bookkeeping.
 var cocked_on: int = -1
+## The second face a cocked die is showing, or 0. Whichever path threw the
+## die fills this in; the rules only ever read this.
+var second_value: int = 0
 
 
 func landing_position() -> Vector2:
