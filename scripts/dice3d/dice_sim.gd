@@ -3,20 +3,16 @@ extends Node3D
 ## The physical throw. Five rigid bodies, a felt disc, a rail the dice can
 ## genuinely clear, and the dirt beyond it.
 ##
-## The sim is authoritative for what the dice do. Everything the rules need —
-## face, zone, cocked, lost — is read back off the settled bodies rather than
-## decided in advance. Forced outcomes are handled the way dice games handle
-## them: re-seed, re-run invisibly, and keep the seed that satisfies the
-## requirement (see throw_search.gd).
+## The sim decides what the dice do; it does not decide what that means. Raw
+## landings go to ThrowContract, which derives zone, loss and cocking for both
+## this path and the model in throw.gd — so the two cannot drift apart and
+## quietly invalidate the balance sweeps.
+##
+## Forced outcomes are handled the way dice games handle them: re-seed, re-run
+## invisibly, and keep the seed that satisfies the requirement (throw_search.gd).
 ##
 ## It runs headless: physics does not need a renderer, so the tests and any
 ## invisible search cost nothing but time.
-##
-## NOT YET WIRED INTO THE GAME. Game.throw() still runs the model in
-## throw.gd, and the two disagree: this sim produces no cocked dice at the
-## committed profiles, where the model produces them regularly. Reconcile the
-## two behind one contract for zones, loss and cocking before switching the
-## game over, or the balance sweeps stop describing the game they measure.
 
 signal settled(outcome: Array)
 
@@ -31,6 +27,10 @@ const SETTLE_TIMEOUT := 4.0
 ## The impulse is integrated on the next tick, so a rest check before this has
 ## not seen the throw happen yet — without it every throw settles on the spot.
 const MIN_FLIGHT := 0.45
+## Dice leave the hand in a stream, not a rank: released together they land
+## together and bounce apart, and no die can ever come to rest on another.
+const RELEASE_STAGGER := 0.09
+const RELEASE_JITTER := 0.05
 
 var bodies: Array[DieBody] = []
 var rng := RandomNumberGenerator.new()
@@ -39,6 +39,9 @@ var _felt: StaticBody3D
 var _elapsed: float = 0.0
 var _running: bool = false
 var _live: Array[DieBody] = []
+## Dice waiting to leave the hand.
+var _release_queue: Array = []
+var _last_release: float = 0.0
 
 
 func _ready() -> void:
@@ -70,8 +73,7 @@ func _build_table() -> void:
 		var segment_width := TAU * LIP_RADIUS / float(RAIL_SEGMENTS) * 1.2
 		box.size = Vector3(segment_width, RAIL_HEIGHT, 0.28)
 		wall.shape = box
-		wall.position = Vector3(cos(angle), RAIL_HEIGHT * 0.5, sin(angle)) * LIP_RADIUS
-		wall.position.y = RAIL_HEIGHT * 0.5
+		wall.position = Vector3(cos(angle) * LIP_RADIUS, RAIL_HEIGHT * 0.5, sin(angle) * LIP_RADIUS)
 		wall.rotation.y = -angle
 		rail.add_child(wall)
 	add_child(rail)
@@ -97,20 +99,25 @@ func begin_throw(dice: Array[DieBody], strength: int, seed_value: int) -> void:
 	# frame's contacts, so two identical throws made from different histories
 	# diverge — dice that never touched each other in one run collide in the
 	# next. New RIDs carry no history, which is what makes a seed mean
-	# something (D2). Five bodies is nothing to rebuild.
+	# something. Five bodies is nothing to rebuild.
 	spawn(dice.size())
 	rng.seed = seed_value
 	_live = bodies
 	_elapsed = 0.0
 	_running = true
+	_release_queue.clear()
+	_last_release = 0.0
+
 	var profile: Dictionary = Balance.throw_impulses[strength]
-	for i in dice.size():
-		var body := dice[i]
+	for i in _live.size():
+		var body := _live[i]
 		body.cocked_on = -1
 		body.settled_value = 0
-		# Thrown from the near lip, across the felt.
+		var release_at := float(i) * RELEASE_STAGGER + rng.randf_range(0.0, RELEASE_JITTER)
+		_last_release = maxf(_last_release, release_at)
 		var lateral := rng.randf_range(-1.0, 1.0) * float(profile["spread"])
-		var origin := Vector3(lateral, 1.6 + rng.randf_range(0.0, 0.5), LIP_RADIUS * 0.80)
+		var origin := Vector3(lateral, 1.6 + rng.randf_range(0.0, 0.5),
+			LIP_RADIUS * 0.80 + rng.randf_range(-0.2, 0.2))
 		var aim := Vector3(
 			rng.randf_range(-1.0, 1.0) * float(profile["spread"]),
 			float(profile["lift"]),
@@ -120,7 +127,12 @@ func begin_throw(dice: Array[DieBody], strength: int, seed_value: int) -> void:
 		) * float(profile["spin"])
 		var start := Basis.from_euler(Vector3(
 			rng.randf_range(0.0, TAU), rng.randf_range(0.0, TAU), rng.randf_range(0.0, TAU)))
-		body.throw_from(origin, start, aim, spin)
+		# Parked out of the way until its turn, so it cannot be struck early.
+		body.throw_from(Vector3(0, 40.0 + i, 0), start, Vector3.ZERO, Vector3.ZERO)
+		_release_queue.append({
+			"die": body, "at": release_at, "origin": origin,
+			"basis": start, "impulse": aim, "spin": spin,
+		})
 
 
 func is_running() -> bool:
@@ -131,7 +143,8 @@ func _physics_process(delta: float) -> void:
 	if not _running:
 		return
 	_elapsed += delta
-	if _elapsed < MIN_FLIGHT:
+	_release_due()
+	if _elapsed < MIN_FLIGHT + _last_release:
 		return
 	var all_rested := true
 	for body in _live:
@@ -145,43 +158,50 @@ func _physics_process(delta: float) -> void:
 		settled.emit(read_outcome())
 
 
-## Read the rules' state off the settled bodies. Nothing is decided here that
-## the physics did not already decide.
+## Let go of any die whose moment has come.
+func _release_due() -> void:
+	var still_waiting: Array = []
+	for entry in _release_queue:
+		if _elapsed < float(entry["at"]):
+			still_waiting.append(entry)
+			continue
+		var body: DieBody = entry["die"]
+		body.throw_from(entry["origin"], entry["basis"], entry["impulse"], entry["spin"])
+	_release_queue = still_waiting
+
+
+## Read the raw landings off the settled bodies and hand them to the contract.
+## Nothing about zones, loss or cocking is decided here.
 func read_outcome() -> Array:
-	var out: Array = []
+	var records: Array = []
 	for body in _live:
-		var lost := body.global_position.y < DIRT_Y \
-			or body.table_radius(LIP_RADIUS) > 1.0
-		body.settled_value = 0 if lost else body.read_face()
-		out.append({
-			"id": body.die_id,
-			"value": body.settled_value,
-			"radius": body.table_radius(LIP_RADIUS),
-			"lost": lost,
-			"flat": body.is_flat(),
-			"position": Vector2(body.global_position.x, body.global_position.z) / LIP_RADIUS,
-		})
-	_resolve_cocked(out)
-	return out
+		var position := Vector2(body.global_position.x, body.global_position.z) / LIP_RADIUS
+		if body.global_position.y < DIRT_Y:
+			# Past the lip and still falling: park it outside the disc so the
+			# contract reads it as lost.
+			position = position.normalized() * 1.5 if position.length() > 0.01 \
+				else Vector2(1.5, 0.0)
+		records.append(ThrowContract.record(
+			body.die_id, body.read_face(), position, -1, body.is_flat()))
+	_resolve_resting(records)
+	return ThrowContract.derive(records)
 
 
-## A die resting on another is a natural outcome of the sim rather than a
-## special case — D6. Read geometrically rather than from contacts, because a
+## Which dice came to rest on top of which — read geometrically, because a
 ## sleeping body reports no contacts and every settled die is asleep.
-func _resolve_cocked(out: Array) -> void:
-	for i in _live.size():
-		out[i]["cocked_on"] = -1
+##
+## Measured: at these proportions this essentially never fires. Thrown cubes
+## land flat on felt, and across 180 throws the largest vertical gap between
+## any two settled dice was a fifth of a die. See docs/AUDIT.md.
+func _resolve_resting(records: Array) -> void:
 	for i in _live.size():
 		var body := _live[i]
-		# Resting on another die is the definition, flat or not: a die sitting
-		# squarely on top of another is the commonest stack, and gating on
-		# tilt excluded exactly that case.
-		if out[i]["lost"]:
+		if body.global_position.y < DIRT_Y:
 			continue
 		var beneath := -1
 		var best_drop := 0.0
 		for j in _live.size():
-			if i == j or out[j]["lost"]:
+			if i == j:
 				continue
 			var other := _live[j]
 			var drop := body.global_position.y - other.global_position.y
@@ -196,4 +216,4 @@ func _resolve_cocked(out: Array) -> void:
 				best_drop = drop
 				beneath = other.die_id
 		body.cocked_on = beneath
-		out[i]["cocked_on"] = beneath
+		records[i]["resting_on"] = beneath

@@ -28,6 +28,16 @@ const STRENGTH_BLURBS := {
 }
 
 
+## The model's landings, in the same shape the physics path produces, so both
+## can be checked against the same contract.
+static func records_for(dice: Array[Die]) -> Array:
+	var records: Array = []
+	for d in dice:
+		records.append(ThrowContract.record(
+			d.id, 0 if d.lost else d.value, d.landing_position(), d.cocked_on, true))
+	return ThrowContract.derive(records)
+
+
 ## Result of one throw, for logging and for a future visual layer to replay.
 class Result extends RefCounted:
 	var strength: int
@@ -110,12 +120,10 @@ static func resolve(dice: Array[Die], strength: int, rng: RandomNumberGenerator,
 	return result
 
 
+## Kept as the enum's own helper; the definition lives in ThrowContract so
+## the physics path cannot drift from it.
 static func zone_for_radius(radius: float) -> int:
-	if radius > 1.0:
-		return Zone.LOST
-	if radius >= Balance.rail_inner_radius:
-		return Zone.RAIL
-	return Zone.POT
+	return ThrowContract.zone_for_radius(radius)
 
 
 ## How many of these dice took the rail double.
