@@ -33,8 +33,16 @@ const STRENGTH_BLURBS := {
 static func records_for(dice: Array[Die]) -> Array:
 	var records: Array = []
 	for d in dice:
+		# The model's cocked die came down on another one: it reads its own
+		# face and the face beneath, which is the same "showing two faces"
+		# the physics produces from a die that did not settle flat.
+		var second := 0
+		if d.cocked_on != -1:
+			for other in dice:
+				if other.id == d.cocked_on and not other.lost:
+					second = other.value
 		records.append(ThrowContract.record(
-			d.id, 0 if d.lost else d.value, d.landing_position(), d.cocked_on, true))
+			d.id, 0 if d.lost else d.value, d.landing_position(), second, d.cocked_on == -1))
 	return ThrowContract.derive(records)
 
 
@@ -103,7 +111,7 @@ static func resolve(dice: Array[Die], strength: int, rng: RandomNumberGenerator,
 	_resolve_collisions(dice, result, rng)
 
 	# 4. A die resting on another is cocked: it counts as both faces.
-	_resolve_stacks(dice, result)
+	_resolve_stacks(dice, result, rng)
 
 	# 5. Anything past the rail is gone for the rest of the floor.
 	for d in dice:
@@ -153,9 +161,20 @@ static func rail_multiplier(dice: Array[Die]) -> float:
 
 # --- Internals ---------------------------------------------------------------
 
+## Pick the zone from the measured odds, then a radius inside it. Sampling
+## this way rather than from a radius band is what keeps the model's landings
+## distributed like the simulation's.
 static func _place(die: Die, strength: int, rng: RandomNumberGenerator) -> void:
-	var band: Vector2 = Balance.throw_bands[strength]
-	die.landing_radius = rng.randf_range(band.x, band.y)
+	var odds: Dictionary = Balance.zone_odds[strength]
+	var roll := rng.randf()
+	var pot: float = odds["pot"]
+	var rail: float = odds["rail"]
+	if roll < pot:
+		die.landing_radius = rng.randf_range(0.0, Balance.rail_inner_radius)
+	elif roll < pot + rail:
+		die.landing_radius = rng.randf_range(Balance.rail_inner_radius, 1.0)
+	else:
+		die.landing_radius = rng.randf_range(1.001, 1.25)
 	die.landing_angle = rng.randf_range(0.0, TAU)
 	die.zone = zone_for_radius(die.landing_radius)
 	die.cocked_on = -1
@@ -213,19 +232,26 @@ static func _resolve_collisions(dice: Array[Die], result: Result, rng: RandomNum
 
 
 ## Landing all but on top of another die: counts as both faces until disturbed.
-static func _resolve_stacks(dice: Array[Die], result: Result) -> void:
+## In the simulation a die is cocked when it fails to settle flat, at a rate
+## the tuner measures. Proximity stood in for that here and produced its own
+## unrelated rate, so the model now draws from the measured one instead.
+static func _resolve_stacks(dice: Array[Die], result: Result, rng: RandomNumberGenerator) -> void:
 	for d in dice:
 		if d.lost or d.locked:
 			continue
 		d.cocked_on = -1
+		if rng.randf() >= Balance.cocked_odds:
+			continue
+		# It is leaning: the second face is a neighbour of the one on top,
+		# never its opposite, exactly as a tipped die reads.
 		for other in dice:
-			if other == d or other.lost:
+			if other == d or other.lost or other.value == d.value:
 				continue
-			if _distance(d, other) < Balance.stack_radius:
-				d.cocked_on = other.id
-				d.zone = other.zone
-				result.cocked.append(d)
-				break
+			if other.value + d.value == 7:
+				continue
+			d.cocked_on = other.id
+			result.cocked.append(d)
+			break
 
 
 static func _distance(a: Die, b: Die) -> float:

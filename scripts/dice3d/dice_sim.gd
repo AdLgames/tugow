@@ -181,39 +181,14 @@ func read_outcome() -> Array:
 			# contract reads it as lost.
 			position = position.normalized() * 1.5 if position.length() > 0.01 \
 				else Vector2(1.5, 0.0)
-		records.append(ThrowContract.record(
-			body.die_id, body.read_face(), position, -1, body.is_flat()))
-	_resolve_resting(records)
+		var flat := body.is_flat()
+		var value := body.read_face()
+		var second := 0
+		if not flat:
+			# Leaning: it is showing two faces, and both count.
+			var faces := body.read_two_faces()
+			value = int(faces[0])
+			second = int(faces[1])
+		body.cocked_on = -1 if flat else body.die_id
+		records.append(ThrowContract.record(body.die_id, value, position, second, flat))
 	return ThrowContract.derive(records)
-
-
-## Which dice came to rest on top of which — read geometrically, because a
-## sleeping body reports no contacts and every settled die is asleep.
-##
-## Measured: at these proportions this essentially never fires. Thrown cubes
-## land flat on felt, and across 180 throws the largest vertical gap between
-## any two settled dice was a fifth of a die. See docs/AUDIT.md.
-func _resolve_resting(records: Array) -> void:
-	for i in _live.size():
-		var body := _live[i]
-		if body.global_position.y < DIRT_Y:
-			continue
-		var beneath := -1
-		var best_drop := 0.0
-		for j in _live.size():
-			if i == j:
-				continue
-			var other := _live[j]
-			var drop := body.global_position.y - other.global_position.y
-			if drop < DIE_SIZE * 0.35 or drop > DIE_SIZE * 1.4:
-				continue
-			var flat_gap := Vector2(
-				body.global_position.x - other.global_position.x,
-				body.global_position.z - other.global_position.z).length()
-			if flat_gap > DIE_SIZE * 1.05:
-				continue
-			if drop > best_drop:
-				best_drop = drop
-				beneath = other.die_id
-		body.cocked_on = beneath
-		records[i]["resting_on"] = beneath

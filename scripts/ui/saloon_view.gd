@@ -330,9 +330,8 @@ func _draw_table() -> void:
 
 	# Where the hovered draw can reach — the lip included, which is the point.
 	if preview_strength >= 0:
-		var band: Vector2 = Balance.throw_bands.get(preview_strength, Vector2(0, 1))
 		var reach: PackedVector2Array = projection.ring(
-			minf(band.y, 1.0) * 0.845 * 0.55 + 0.0)
+			minf(Balance.reach_of(preview_strength), 1.0) * 0.845 * 0.55)
 		draw_polyline(reach, Color(ThemeColors.DECLARED, 0.55), 2.0, true)
 
 

@@ -19,6 +19,8 @@ func _ready() -> void:
 	await _test_determinism()
 	await _test_strength_bands()
 	await _test_cocked_happens()
+	await _test_cocked_on_dice()
+	await _test_calibration_still_holds()
 	await _test_forced_outcome()
 	_report()
 
@@ -115,6 +117,24 @@ func _test_strength_bands() -> void:
 
 
 func _test_cocked_happens() -> void:
+	# How often does a thrown die fail to settle flat? This is the rate the
+	# cocked mechanic actually has, now that "resting on another die" is
+	# known to be unreachable.
+	var leaning := 0
+	var total := 0
+	for seed_value in range(100, 110):
+		for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
+			for entry in await _throw(strength, seed_value * 3 + strength):
+				if entry["lost"]:
+					continue
+				total += 1
+				if not entry["flat"]:
+					leaning += 1
+	print("  dice that did not settle flat: %d of %d (%.1f%%)"
+		% [leaning, total, 100.0 * leaning / maxi(1, total)])
+
+
+func _test_cocked_on_dice() -> void:
 	# The sim gives cocked dice for nothing; check the reader sees them.
 	var seen := 0
 	for seed_value in range(40, 70):
@@ -124,6 +144,38 @@ func _test_cocked_happens() -> void:
 				seen += 1
 	print("  cocked dice seen in 30 hard throws: %d" % seen)
 	check(true, "cocked detection runs over a batch without erroring")
+
+
+## The model in throw.gd samples its landings from Balance.zone_odds, which
+## was measured from this simulation. If the sim changes and that table is not
+## re-measured, the balance sweeps quietly stop describing the game. This is
+## the tripwire for that.
+func _test_calibration_still_holds() -> void:
+	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
+		var counts := {"pot": 0, "rail": 0, "lost": 0}
+		var dice := 0
+		for seed_value in range(200, 215):
+			for entry in await _throw(strength, seed_value * 5 + strength):
+				dice += 1
+				match int(entry["zone"]):
+					Throw.Zone.LOST:
+						counts["lost"] += 1
+					Throw.Zone.RAIL:
+						counts["rail"] += 1
+					_:
+						counts["pot"] += 1
+		var expected: Dictionary = Balance.zone_odds[strength]
+		var worst := 0.0
+		for zone in counts:
+			var measured := float(counts[zone]) / float(maxi(1, dice))
+			worst = maxf(worst, absf(measured - float(expected[zone])))
+		print("  %s: pot %.2f rail %.2f dirt %.2f (table says %.2f/%.2f/%.2f, worst gap %.2f)"
+			% [Throw.strength_name(strength),
+				float(counts["pot"]) / dice, float(counts["rail"]) / dice,
+				float(counts["lost"]) / dice,
+				expected["pot"], expected["rail"], expected["lost"], worst])
+		check(worst < 0.20,
+			"%s throws still land the way Balance.zone_odds says" % Throw.strength_name(strength))
 
 
 func _test_forced_outcome() -> void:

@@ -10,6 +10,11 @@ godot --headless --path . res://tools/curve_report.tscn
 Figures below are from the committed settings: tempered curve, base threshold
 60, floor scaling 1.45×, reclaim 3, carry 1.0, linear rail, twelve floors.
 
+**These numbers were re-measured after the model was calibrated to the
+physics** (see [AUDIT.md](AUDIT.md)); the model's landings are now sampled
+from rates measured off the simulation rather than from invented radius
+bands, which shifts every depth figure.
+
 **The throw layer changed every depth number in this file.** Rail multipliers
 and lost dice together moved greedy-bot mean depth from roughly floor 4 to
 floor 7. Sections 3–4 have been re-measured; the rail's own numbers are in
@@ -76,7 +81,7 @@ Overshoot now banks: the excess carries into the next floor's starting score,
 capped at half of that floor's threshold so that one monster turn cannot skip
 a floor outright (`overflow_carry_ratio`, `overflow_carry_cap`).
 
-Greedy-bot mean depth by carry ratio: 0.0 → 5.97, 0.5 → 6.65, 1.0 → 7.05.
+Greedy-bot mean depth by carry ratio: 0.0 → 5.77, 0.5 → 6.78, 1.0 → 7.20.
 Committed at 1.0 with the 50% cap. The duel comparison deliberately ignores
 carried points — you out-score an Adversary with what you scored on its floor,
 not with what you brought in.
@@ -95,14 +100,14 @@ maximum-value Yahtzees, and the ladder stops being a target and becomes a wall.
 
 ## 4. Reclaim generosity (open question #5)
 
-Greedy-bot mean depth by reclaim value: 0 → 5.60, 1 → 5.85, 2 → 6.37,
-3 → 7.05, 4 → 7.27, 5 → 7.38. Monotonic and gentle — no value tested makes the
+Greedy-bot mean depth by reclaim value: 0 → 5.37, 1 → 5.93, 2 → 6.40,
+3 → 7.20, 4 → 7.47, 5 → 7.53. Monotonic and gentle — no value tested makes the
 run unkillable, so **3 is committed** on the grounds that it is a visible
 reward (a quarter of the card) without being a reset.
 
 The more useful finding is what the sweep exposes: **run length is governed by
-turns-per-floor, not by thresholds.** Scaling from 1.4× to 1.6× moves mean depth
-about a floor and a quarter (7.45 → 6.20), while the card still runs dry first; the bot still spends about three boxes a floor and only meets an
+turns-per-floor, not by thresholds.** Scaling from 1.4× to 1.6× moves mean depth about
+a floor and a half (7.52 → 6.03), while the card still runs dry first; the bot still spends about three boxes a floor and only meets an
 Adversary on floors 3, 5 and 7. The
 scorecard, not the difficulty curve, is the clock — which is the design working
 as intended, but it means future tuning should go to reclaim, duel frequency,

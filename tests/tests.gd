@@ -23,6 +23,7 @@ func _ready() -> void:
 	_test_lock_out_guard()
 	_test_free_dice_excludes_lost()
 	_test_throw_zones()
+	_test_model_matches_calibration()
 	_test_rail_persistence()
 	_test_collisions_and_cocking()
 	_test_underside()
@@ -154,7 +155,9 @@ func _test_locking_narrows_the_table() -> void:
 	var still_locked := game.pool.locked_by("player").size()
 	check(still_locked == 2, "locks persist into the next turn of the floor")
 	check(game.pool.table.size() == Balance.dice_per_roll, "the table tops up from the pool")
-	check(game.pool.unlocked_dice().size() == game.pool.dice.size() - 2, "locked dice leave the pool")
+	var spoken_for := 2 + game.pool.lost_dice().size()
+	check(game.pool.unlocked_dice().size() == game.pool.dice.size() - spoken_for,
+		"locked and lost dice both leave the pool")
 
 
 # --- Charms, forge, adversaries ---------------------------------------------
@@ -373,7 +376,9 @@ func _test_throw_zones() -> void:
 		var result := Throw.resolve(dice, Throw.Strength.SOFT, rng)
 		soft_rail += Throw.rail_count(dice)
 		soft_lost += result.lost.size()
-	check(soft_rail == 0, "a soft throw never reaches the rail")
+	# Soft reaches the rail about one die in six — measured from the sim, not
+	# assumed. What it never does is put a die in the dirt.
+	check(soft_rail > 0, "a soft throw can still reach the rail")
 	check(soft_lost == 0, "a soft throw never loses a die")
 
 	# Medium: some rail, no losses.
@@ -385,7 +390,7 @@ func _test_throw_zones() -> void:
 		medium_rail += Throw.rail_count(dice)
 		medium_lost += result.lost.size()
 	check(medium_rail > 0, "a medium throw reaches the rail")
-	check(medium_lost == 0, "a medium throw does not put dice off the table")
+	check(medium_lost > 0, "a medium throw can put a die off the table")
 
 	# Hard: wide scatter, real risk.
 	var hard_rail := 0
@@ -395,8 +400,37 @@ func _test_throw_zones() -> void:
 		var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
 		hard_rail += Throw.rail_count(dice)
 		hard_lost += result.lost.size()
-	check(hard_rail > medium_rail, "a hard throw hits the rail more often")
-	check(hard_lost > 0, "a hard throw loses dice off the table")
+	# Measured, not assumed: a hard throw both reaches the rail more often
+	# than a soft one and puts far more dice in the dirt than a medium one.
+	check(hard_rail > soft_rail, "a hard throw reaches the rail more often than a soft one")
+	check(hard_lost > medium_lost, "a hard throw loses more dice than a medium one")
+
+
+## The other half of the tripwire: the model must actually sample the odds it
+## is calibrated to.
+func _test_model_matches_calibration() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31337
+	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
+		var counts := {"pot": 0, "rail": 0, "lost": 0}
+		var dice := 0
+		for _i in 200:
+			var thrown := _make_dice(5, rng)
+			Throw.resolve(thrown, strength, rng)
+			for d in thrown:
+				dice += 1
+				if d.lost:
+					counts["lost"] += 1
+				elif d.zone == Throw.Zone.RAIL:
+					counts["rail"] += 1
+				else:
+					counts["pot"] += 1
+		var expected: Dictionary = Balance.zone_odds[strength]
+		var worst := 0.0
+		for zone in counts:
+			worst = maxf(worst, absf(float(counts[zone]) / float(dice) - float(expected[zone])))
+		check(worst < 0.10, "the model lands %s throws the way it is calibrated to"
+			% Throw.strength_name(strength).to_lower())
 
 
 func _test_rail_persistence() -> void:
@@ -501,12 +535,29 @@ func _test_rail_multiplier() -> void:
 func _test_lost_dice_are_floor_long() -> void:
 	var game := Game.new()
 	game.start_run(808)
-	var victim := game.pool.table[0]
-	var values_before: int = game.pool.table_values().size()
+	# Pick a die that is actually on the table with a face on it: the opening
+	# throw can already have put one in the dirt, and a die that was never
+	# worth anything cannot demonstrate that losing it costs you something.
+	var victim: Die = null
+	for d in game.pool.live_table():
+		if d.value > 0:
+			victim = d
+			break
+	check(victim != null, "the opening throw leaves at least one die on the table")
+	if victim == null:
+		return
+	# Take the die off the table and see what the resolver stops reading. A
+	# cocked die is worth two faces, and any die on the table may be one.
+	var before_values: Array = game.pool.table_values().duplicate()
+	var victim_value := victim.value
 	victim.lost = true
 	victim.zone = Throw.Zone.LOST
+	victim.cocked_on = -1
 	check(not game.pool.unlocked_dice().has(victim), "a lost die leaves the pool")
-	check(game.pool.table_values().size() == values_before - 1, "a lost die scores nothing")
+	var after_values: Array = game.pool.table_values()
+	check(after_values.size() < before_values.size(), "a lost die scores nothing")
+	check(before_values.count(victim_value) > after_values.count(victim_value),
+		"the lost die's face is the one that left")
 	game.pool.begin_floor()
 	check(not victim.lost, "the next floor brings it back")
 

@@ -79,6 +79,18 @@ func is_flat() -> bool:
 	return flatness() >= FLAT_DOT
 
 
+## The two faces a leaning die is showing: the one nearest the ceiling, and
+## the one it has tipped toward. A die that has not settled flat is cocked,
+## and this is what it reads as.
+func read_two_faces() -> Array:
+	var scored: Array = []
+	for entry in FACE_AXES:
+		var world_axis := (global_transform.basis * (entry[0] as Vector3)).normalized()
+		scored.append([world_axis.dot(Vector3.UP), int(entry[1])])
+	scored.sort_custom(func(a, b): return a[0] > b[0])
+	return [int(scored[0][1]), int(scored[1][1])]
+
+
 func at_rest() -> bool:
 	return sleeping or (linear_velocity.length() < 0.06 and angular_velocity.length() < 0.12)
 

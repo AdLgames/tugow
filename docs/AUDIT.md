@@ -80,6 +80,39 @@ it is open:
    cut content on the physics path.
 3. **Drop it**, and let the two faces come from somewhere else.
 
-Until it is settled, the physics path reports no cocked dice and the model
-path still produces them — which is exactly the kind of divergence the
-contract exists to make visible rather than silent.
+### Settled: option 1
+
+A die that has not settled flat is cocked, and reads the face nearest the
+ceiling plus the one it has tipped toward. Measured rate: **2.1% of settled
+dice**, roughly one cocked die every ten throws — which is the design's own
+"rare, powerful, unstable" without having to invent anything.
+
+The model draws from that same measured rate rather than from proximity, and
+picks a second face that is a neighbour of the first, never its opposite,
+because that is how a tipped die reads.
+
+## Calibration, and the tripwire on it
+
+The two paths did not only disagree about cocking. The model's landing bands
+were invented — soft never reached the rail, where the simulation puts a die
+there one time in seven. So the model now samples the **zone** from rates
+measured off the simulation (`Balance.zone_odds`) and then a radius inside
+that zone. The paths agree by construction, which is what allows the balance
+sweeps to run on the model and still describe the game the player gets.
+
+Both halves are guarded:
+
+- `tests/dice3d_tests.gd` throws 75 physical dice per strength and fails if
+  the result drifts from `zone_odds`.
+- `tests/tests.gd` samples 1,000 model dice per strength and fails if the
+  model stops sampling what it is calibrated to.
+
+**The tripwire fired the first time it ran.** The table had been measured
+before dice were given a staggered release, so it described physics that no
+longer existed — hard throws were recorded as 40% dirt when they had become
+24%. Re-measured, and every depth number in BALANCE.md re-run.
+
+Four assertions in `tests.gd` had also encoded the invented bands ("a soft
+throw never reaches the rail", "a medium throw does not put dice off the
+table"). Those were assertions about a fiction, and they were rewritten to
+the measured behaviour rather than the code being bent back to satisfy them.

@@ -13,13 +13,18 @@ extends RefCounted
 
 ## One die's landing, before derivation. `position` is on the unit disc:
 ## length 1.0 is the lip of the table.
-static func record(id: int, value: int, position: Vector2, resting_on: int = -1,
+## A cocked die is one that is showing two faces at once. In the physics that
+## is a die which did not settle flat, reading the face nearest the ceiling
+## and the one it has tipped toward; in the model it is a die that came down
+## on another, reading its own face and the one beneath. Either way the rules
+## see the same thing: `second_value` greater than zero.
+static func record(id: int, value: int, position: Vector2, second_value: int = 0,
 		flat: bool = true) -> Dictionary:
 	return {
 		"id": id,
 		"value": value,
 		"position": position,
-		"resting_on": resting_on,
+		"second_value": second_value,
 		"flat": flat,
 	}
 
@@ -35,8 +40,8 @@ static func derive(records: Array) -> Array:
 		entry["zone"] = zone_for_radius(radius)
 		if entry["lost"]:
 			entry["value"] = 0
-			entry["resting_on"] = -1
-		entry["cocked_on"] = -1 if entry["lost"] else int(entry["resting_on"])
+			entry["second_value"] = 0
+		entry["cocked"] = int(entry["second_value"]) > 0
 	return records
 
 
@@ -56,13 +61,8 @@ static func values_of(records: Array) -> Array:
 		if entry["lost"] or int(entry["value"]) <= 0:
 			continue
 		out.append(int(entry["value"]))
-		var beneath := int(entry["cocked_on"])
-		if beneath == -1:
-			continue
-		for other in records:
-			if int(other["id"]) == beneath and not other["lost"]:
-				out.append(int(other["value"]))
-				break
+		if int(entry["second_value"]) > 0:
+			out.append(int(entry["second_value"]))
 	return out
 
 
@@ -88,19 +88,11 @@ static func violations(records: Array) -> Array[String]:
 		if not entry["lost"] and (int(entry["value"]) < 1 or int(entry["value"]) > 9):
 			problems.append("die %d shows %d, outside 1-9" % [id, int(entry["value"])])
 
-		var beneath := int(entry["cocked_on"])
-		if beneath == -1:
+		var second := int(entry["second_value"])
+		if second == 0:
 			continue
-		if beneath == id:
-			problems.append("die %d is cocked on itself" % id)
-		var found := false
-		for other in records:
-			if int(other["id"]) == beneath:
-				found = true
-				if other["lost"]:
-					problems.append("die %d is cocked on a die that is gone" % id)
-				if int(other["cocked_on"]) == id:
-					problems.append("dice %d and %d are cocked on each other" % [id, beneath])
-		if not found:
-			problems.append("die %d is cocked on a die that is not in this throw" % id)
+		if second < 1 or second > 9:
+			problems.append("die %d shows a second face of %d" % [id, second])
+		if second == int(entry["value"]):
+			problems.append("die %d is cocked between a face and itself" % id)
 	return problems
