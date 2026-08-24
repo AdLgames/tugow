@@ -107,6 +107,11 @@ var duel_reclaim: int = 3
 
 # --- Bench ------------------------------------------------------------------
 
+## Charms a night. The bench is visited once per night, so this is also the
+## cap per visit — without it a night with lines to spare could buy out half
+## the library at once.
+var charms_per_night: int = 1
+
 var bench_costs: Dictionary = {
 	"reshape_face": 1,
 	"cleanse_bitter": 1,

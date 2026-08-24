@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_charms()
 	_test_forge()
 	_test_adversaries()
+	_test_charm_limit()
 	_test_denial()
 	_test_floor_transition()
 	_test_overflow_carry()
@@ -218,6 +219,23 @@ func _test_forge() -> void:
 	while game.card.open_count() > 1:
 		game.card.burn(game.card.open_boxes()[0])
 	check(not Bench.can_afford(game, 1), "the last box is not for sale")
+
+
+## One charm a night, however many lines you are willing to burn.
+func _test_charm_limit() -> void:
+	var game := Game.new()
+	game.start_run(6161)
+	var first := Bench.next_charm(game)
+	check(first != null, "the bench offers a charm")
+	game.take_charm(first)
+	check(Bench.next_charm(game) == null, "and only the one, tonight")
+	var offered_ids: Array = []
+	for offer in Bench.offers(game):
+		offered_ids.append(offer["id"])
+	check(not offered_ids.has(&"take_charm"), "the charm is off the board once taken")
+	game.next_floor()
+	check(Bench.next_charm(game) != null, "the next night offers another")
+	check(game.charms_taken_tonight == 0, "the count resets with the night")
 
 
 func _test_adversaries() -> void:

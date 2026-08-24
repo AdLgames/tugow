@@ -143,6 +143,26 @@ Art drops in by filename, no code change:
 | Die names and condition | Done — pool strip shows facet progress, bitterness, holder, losses |
 | Boxes remaining | Done — lip strip, agreeing with the Ledger |
 
+## Charms
+
+One a night. The bench is visited once between nights, and re-rendered after
+each purchase, so a night with lines to spare could previously buy several
+charms at once. `Balance.charms_per_night` caps it.
+
+## The clear felt
+
+Dice land in the region of table left over once the Ledger, the dice tray and
+the draw buttons have taken their room — derived from those nodes' real
+rectangles in `main.gd`, not guessed at in the scene, so it cannot drift out
+of step with the layout.
+
+Inside it, `SaloonView.place_dice()` relaxes the arrangement until no two dice
+overlap. Their landing positions still order them, but two dice can genuinely
+come to rest in the same place on a table, and two overlapping sprites cannot
+be counted or clicked. The footprint used for spacing is half a die's
+diagonal, not half its width, because the name above and the tag below are
+part of what must stay legible.
+
 ## Naming
 
 `scripts/ui/lore.gd` holds every player-facing word: the Ledger, lines owed,

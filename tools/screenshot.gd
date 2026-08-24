@@ -16,7 +16,11 @@ func _ready() -> void:
 	add_child(_main)
 	await get_tree().process_frame
 
-	await _shot("01_title")
+	await _shot("01_intro")
+	for _i in 8:
+		if not _press("Next"):
+			break
+	_press("Deal me in")
 	_press("Sit down")
 	_main._throw_buttons[Throw.Strength.HARD].pressed.emit()
 	await _shot("02_turn")
@@ -92,11 +96,12 @@ func _hold(prefix: String) -> void:
 			return
 
 
-func _press(prefix: String) -> void:
+func _press(prefix: String) -> bool:
 	for child in _main._overlay_body.get_children():
 		if child is Button and child.text.begins_with(prefix) and not child.disabled:
 			child.pressed.emit()
-			return
+			return true
+	return false
 
 
 func _shot(name: String) -> void:

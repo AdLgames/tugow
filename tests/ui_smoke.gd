@@ -20,8 +20,12 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	# The title screen is an overlay with one button on it.
-	if not _press("Sit down"):
-		_fail("no start button on the title screen")
+	# A first-time player is shown the explanation before the title.
+	var guard_pages := 0
+	while _press("Next") and guard_pages < 12:
+		guard_pages += 1
+	if not (_press("Deal me in") or _press("Sit down")):
+		_fail("no way into a run from the opening screens")
 		return _report()
 
 	var game: Game = _main.game

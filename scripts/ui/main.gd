@@ -43,7 +43,10 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	clip_contents = true
 	_build()
-	_show_title()
+	if int(RunState.meta.get("runs", 0)) == 0:
+		_show_intro(0)
+	else:
+		_show_title()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -265,6 +268,27 @@ func _set_overlay_visible(shown: bool) -> void:
 
 # --- Screens -----------------------------------------------------------------
 
+## The explanation, once, before the first run — and on demand after it.
+func _show_intro(page_index: int) -> void:
+	var pages := Intro.pages()
+	if page_index < 0 or page_index >= pages.size():
+		_show_title()
+		return
+	var page: Intro.Page = pages[page_index]
+	_clear_overlay(page.title)
+	for line in page.lines:
+		_overlay_text(line)
+	_overlay_text("%d of %d" % [page_index + 1, pages.size()])
+	if page_index + 1 < pages.size():
+		_overlay_button("Next", func() -> void: _show_intro(page_index + 1))
+	else:
+		_overlay_button("Deal me in", _start_run)
+	if page_index > 0:
+		_overlay_button("Back", func() -> void: _show_intro(page_index - 1))
+	_overlay_button("Skip", _show_title)
+	_set_overlay_visible(true)
+
+
 func _show_title() -> void:
 	_clear_overlay("THIRTEEN BOXES")
 	_overlay_text("A dice roguelike where the ledger is your health bar.")
@@ -274,6 +298,7 @@ func _show_title() -> void:
 	_overlay_text("Runs: %d   Deepest night: %d   Best total: %d"
 		% [int(meta["runs"]), int(meta["deepest_floor"]), int(meta["best_total"])])
 	_overlay_button("Sit down", _start_run)
+	_overlay_button("How this works", func() -> void: _show_intro(0))
 	_set_overlay_visible(true)
 
 
@@ -514,23 +539,38 @@ func _refresh() -> void:
 	_placard.queue_redraw()
 
 
-## Dice sit where the throw resolver put them, scaled by how near they landed.
+## What is left of the table once the interface has taken its room: right of
+## the Ledger, below the man opposite, above the dice tray. Derived from the
+## real node rectangles so it cannot drift out of step with them.
+func _clear_felt() -> Rect2:
+	var left := _ledger.position.x + _ledger.size.x + 40.0
+	var top := 540.0
+	var bottom := _tray.position.y - 24.0
+	var right := 1880.0
+	return Rect2(left, top, right - left, bottom - top)
+
+
+## Dice are laid out by the scene, which keeps them inside the clear felt and
+## out of each other's way.
 func _refresh_dice() -> void:
 	for view in _die_views:
 		view.queue_free()
 	_die_views.clear()
+	_scene.rolling_bounds = _clear_felt()
+	var live: Array = []
 	for d in game.pool.table:
-		if d.lost:
-			continue
+		if not d.lost:
+			live.append(d)
+	for placement in _scene.place_dice(live):
 		var view := DieView.new()
 		_dice_layer.add_child(view)
-		view.bind(d)
-		var factor := _scene.die_scale(d)
+		view.bind(placement["die"])
+		var factor: float = placement["scale"]
 		view.scale = Vector2(factor, factor)
-		view.position = _scene.die_position(d) - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
+		view.position = placement["position"] - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
 		view.sway_left = _scene.sway_left
 		view.sway_right = _scene.sway_right
-		view.pressed.connect(_on_die_pressed.bind(d))
+		view.pressed.connect(_on_die_pressed.bind(placement["die"]))
 		_die_views.append(view)
 
 

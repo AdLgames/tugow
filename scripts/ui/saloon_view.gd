@@ -37,6 +37,11 @@ var show_slot_captions: bool = false
 var preview_strength: int = -1
 ## Pulled back when the only move left is on the Ledger.
 var dim_table: bool = false
+## The clear felt, handed over by the interface rather than guessed at here:
+## it is whatever is left of the table once the Ledger, the dice tray and the
+## draw buttons have taken their room. Nothing is thrown on top of the UI, and
+## nothing lands on the sheet.
+var rolling_bounds: Rect2 = Rect2(760, 520, 1120, 300)
 
 ## Sampled from each lantern's sway so dice cast two shadows out of phase.
 var sway_left: float = 0.0
@@ -97,21 +102,69 @@ func lamp_intensity(is_left: bool) -> float:
 	return base * dip
 
 
-## Screen position for a die at its landing spot on the felt. The disc is
-## squashed onto the visible band: the near arc of a real table projects down
-## behind the lip, where a die could not be read or clicked.
+## The clear felt: everything inside the rail that is not under the Ledger and
+## not behind the lip. Dice land here and nowhere else, which is what stops a
+## die from ending up unreadable or unclickable.
+func rolling_area() -> Rect2:
+	return rolling_bounds
+
+
+## Lay the dice out inside the rolling area with no two overlapping.
+##
+## Their landing positions still order them — a die that came down near the
+## rail sits nearer the edge — but two dice can occupy the same spot on the
+## felt, and two overlapping sprites cannot be counted or clicked. So the
+## arrangement is relaxed until every die has its own room.
+func place_dice(dice: Array) -> Array:
+	var area := rolling_area()
+	var placements: Array = []
+	for die in dice:
+		var factor: float = clampf(projection.scale_at(felt_point(die.landing_position())), 0.30, 0.62)
+		# Half the diagonal, not half the width — plus the name above and the
+		# tag below, which are part of what must not overlap.
+		var radius := DieView.SIZE * factor * 0.72
+		var spot: Vector2 = die.landing_position()
+		placements.append({
+			"die": die,
+			"position": area.get_center() + Vector2(
+				spot.x * area.size.x * 0.36, spot.y * area.size.y * 0.34),
+			"scale": factor,
+			"radius": radius,
+		})
+
+	for _pass in 24:
+		var moved := false
+		for i in placements.size():
+			for j in range(i + 1, placements.size()):
+				var a: Dictionary = placements[i]
+				var b: Dictionary = placements[j]
+				var gap: Vector2 = b["position"] - a["position"]
+				var want: float = (a["radius"] + b["radius"]) * 1.05
+				var distance := gap.length()
+				if distance >= want:
+					continue
+				moved = true
+				var push := (gap / maxf(distance, 0.01)) * (want - distance) * 0.5
+				if distance < 0.01:
+					push = Vector2(want * 0.5, 0.0)
+				a["position"] -= push
+				b["position"] += push
+		for placement in placements:
+			placement["position"] = _inside(area, placement["position"], placement["radius"])
+		if not moved:
+			break
+	return placements
+
+
+## Keep a die wholly inside the clear felt.
+func _inside(area: Rect2, at: Vector2, radius: float) -> Vector2:
+	return Vector2(
+		clampf(at.x, area.position.x + radius, area.end.x - radius),
+		clampf(at.y, area.position.y + radius, area.end.y - radius))
+
+
 func felt_point(position: Vector2) -> Vector2:
-	# Biased right and away, so a die never lands under the Ledger or
-	# behind the lip where it could not be read or clicked.
 	return Vector2(position.x * 0.55 + 0.30, position.y * 0.26 + 0.34)
-
-
-func die_position(die: Die) -> Vector2:
-	return projection.project(felt_point(die.landing_position()))
-
-
-func die_scale(die: Die) -> float:
-	return clampf(projection.scale_at(felt_point(die.landing_position())), 0.30, 0.62)
 
 
 # --- Construction ------------------------------------------------------------
@@ -327,6 +380,12 @@ func _draw_table() -> void:
 	draw_polyline(projection.ring(0.80), Color(0, 0, 0, 0.40), 3.0, true)
 	# Dashed seam in the felt.
 	_draw_dashed_ring(0.76, Color(ThemeColors.INK_DIM, 0.12))
+
+	# The clear felt the dice are thrown into: worn paler by use. Drawn as a
+	# patch of wear rather than an outlined box, which read as interface
+	# furniture sitting on an oval table.
+	var area := rolling_area()
+	_draw_radial(area.grow(60.0), ThemeColors.LAMP_WARM, 0.05)
 
 	# Where the hovered draw can reach — the lip included, which is the point.
 	if preview_strength >= 0:

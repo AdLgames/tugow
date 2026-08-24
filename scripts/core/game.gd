@@ -41,6 +41,8 @@ var last_player_values: Array = []
 ## Overshoot banked from the previous floor, and how much of it opened this one.
 var pending_carry: int = 0
 var floor_carry_in: int = 0
+## Charms taken since this night began.
+var charms_taken_tonight: int = 0
 var log_lines: Array[String] = []
 
 
@@ -52,6 +54,7 @@ func start_run(seed_value: int = 0) -> void:
 	victory = false
 	end_reason = ""
 	log_lines.clear()
+	charms_taken_tonight = 0
 	pending_carry = 0
 	floor_carry_in = 0
 	log_line("Thirteen lines. Settle them carefully.")
@@ -64,6 +67,7 @@ func next_floor() -> void:
 		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
 		return
 	threshold = Balance.threshold_for_floor(floor_number)
+	charms_taken_tonight = 0
 	floor_carry_in = pending_carry
 	floor_score = pending_carry
 	pending_carry = 0
@@ -297,6 +301,7 @@ func leave_bench() -> void:
 
 func take_charm(charm: Charm) -> void:
 	charms.append(charm)
+	charms_taken_tonight += 1
 	log_line("Charm taken: %s — %s" % [charm.charm_name, charm.text])
 	state_changed.emit()
 
