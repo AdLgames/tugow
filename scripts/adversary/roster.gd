@@ -146,21 +146,17 @@ static func all() -> Array[Adversary]:
 
 
 ## Difficulty order across a run: teaching fight first, bosses last.
+## Who sits down on a given night. The last night of a week is that week's
+## own man; the duel nights leading up to it are the ones you already beat,
+## in the order you met them. So week 5 walks you back through the whole
+## roster before its own boss arrives.
 static func for_floor(n: int) -> Adversary:
-	match n:
-		3:
-			return Taxman.new()
-		5:
-			return Magpie.new()
-		7:
-			return Reflection.new()
-		9:
-			return Magpie.new()
-		10:
-			return Fire.new()
-		11:
-			return Reflection.new()
-	return Debtor.new()
+	var roster := all()
+	var week: int = Balance.week_of(n)
+	# 0 on the last night of the week, 1 the night before, and so on.
+	var back: int = Balance.nights_per_week - Balance.night_of(n)
+	var index: int = clampi(week - 1 - back, 0, roster.size() - 1)
+	return roster[index]
 
 
 static func by_id(adversary_id: StringName) -> Adversary:

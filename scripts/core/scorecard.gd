@@ -1,6 +1,8 @@
 class_name Scorecard
 extends RefCounted
-## Thirteen boxes. The card is not reset between floors — it is the health bar.
+## Thirteen boxes. The card is not reset between nights — it is the health bar
+## for the week. A finished week gets fresh paper; everything scored on the old
+## sheet is kept.
 
 enum State { OPEN, PLAYER, ADVERSARY, BURNED }
 
@@ -72,6 +74,25 @@ func player_boxes() -> Array[int]:
 
 func is_exhausted() -> bool:
 	return open_count() == 0
+
+
+## Fresh paper for a new week. What was scored is kept — it moves onto the
+## banked pile so the run total still reconciles against the card — but every
+## line reopens, including the ones the Adversary took and the ones he burned.
+## Surviving a week is what buys them back.
+func new_week() -> Array[int]:
+	var wiped: Array[int] = []
+	for box in Scoring.BOX_COUNT:
+		if states[box] == State.PLAYER:
+			reclaimed_total += points[box]
+		if states[box] != State.OPEN:
+			wiped.append(box)
+		states[box] = State.OPEN
+		points[box] = 0
+	spend_order.clear()
+	if not wiped.is_empty():
+		boxes_reclaimed.emit(wiped)
+	return wiped
 
 
 ## The player writes into a box. Scoring a zero here is a scratch — a real move.

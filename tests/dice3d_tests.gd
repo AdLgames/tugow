@@ -137,13 +137,22 @@ func _test_cocked_happens() -> void:
 func _test_cocked_on_dice() -> void:
 	# The sim gives cocked dice for nothing; check the reader sees them.
 	var seen := 0
+	var reported := true
 	for seed_value in range(40, 70):
 		var outcome := await _throw(Throw.Strength.HARD, seed_value)
 		for entry in outcome:
-			if int(entry["cocked_on"]) != -1:
+			# Cocked is derived by the contract, so every landing carries the
+			# field whether or not this one leaned. Reading it by the wrong
+			# name used to fail silently.
+			if not entry.has("cocked") or not entry.has("second_value"):
+				reported = false
+				continue
+			if bool(entry["cocked"]):
 				seen += 1
+				if int(entry["second_value"]) <= 0:
+					reported = false
 	print("  cocked dice seen in 30 hard throws: %d" % seen)
-	check(true, "cocked detection runs over a batch without erroring")
+	check(reported, "every landing reports whether it is cocked, and on what")
 
 
 ## The model in throw.gd samples its landings from Balance.zone_odds, which

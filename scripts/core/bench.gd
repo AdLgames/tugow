@@ -48,9 +48,9 @@ static func offers(game: Game) -> Array:
 	return out
 
 
-## The charm on offer tonight, or null when tonight's charm is already bought.
+## The charm on offer this week, or null once the week's charm is taken.
 static func next_charm(game: Game) -> Charm:
-	if game.charms_taken_tonight >= Balance.charms_per_night:
+	if game.charms_taken_this_week >= Balance.charms_per_week:
 		return null
 	for c in Charms.library():
 		if not game.has_charm(c.id):

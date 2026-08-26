@@ -18,8 +18,12 @@ func _ready() -> void:
 	load_meta()
 
 
-func new_run(seed_value: int = 0) -> Game:
+## `stage` is handed over before the run starts: attaching it afterwards left
+## the first throw of every run resolving on the model while the physical
+## dice sat untouched at the edge of the table.
+func new_run(seed_value: int = 0, stage = null) -> Game:
 	game = Game.new()
+	game.stage = stage
 	game.run_ended.connect(_on_run_ended)
 	game.floor_cleared.connect(_on_floor_cleared)
 	game.player_wrote.connect(_on_player_wrote)

@@ -33,6 +33,7 @@ var _charm_label: Label
 var _log_view: RichTextLabel
 var _scrim: ColorRect
 var _overlay: PanelContainer
+var _overlay_paper := false
 var _overlay_title: Label
 var _overlay_body: VBoxContainer
 var _debug_panel: DebugPanel
@@ -106,8 +107,10 @@ func _build() -> void:
 	_ledger_well.add_child(_ledger)
 
 	_tray = DiceTray.new()
-	_tray.position = Vector2(752, 838)
-	_tray.size = Vector2(1150, 54)
+	# The tray has a wooden surround now, so it grows upward from the same
+	# bottom edge rather than pushing into the lip strip.
+	_tray.position = Vector2(752, 816)
+	_tray.size = Vector2(1150, DiceTray.ENTRY.y + DiceTray.PAD * 2.0)
 	add_child(_tray)
 
 	# The physical dice, rendered into the clear felt. The 2D die views become
@@ -223,7 +226,7 @@ func _build_lip_strip() -> void:
 	brand.add_child(title)
 	strip.add_child(brand)
 
-	_night_label = _stat(strip, Lore.night(1))
+	_night_label = _stat(strip, Lore.week_and_night(1))
 	_score_label = _stat(strip, "0 / 0")
 	_meter = ProgressBar.new()
 	_meter.custom_minimum_size = Vector2(220, 16)
@@ -357,15 +360,15 @@ func _show_title() -> void:
 
 
 func _start_run() -> void:
-	game = RunState.new_run()
+	game = RunState.new_run(0, _stage)
 	game.state_changed.connect(_refresh)
 	game.log_emitted.connect(_on_log)
 	game.run_ended.connect(_on_run_ended)
 	game.floor_cleared.connect(_on_floor_cleared)
 	game.thrown.connect(_on_thrown)
 	game.throw_began.connect(_on_throw_began)
+	game.turn_started.connect(_on_turn_started)
 	if _stage != null:
-		game.stage = _stage
 		if not _stage.throw_settled.is_connected(_on_stage_settled):
 			_stage.throw_settled.connect(_on_stage_settled)
 	_ledger.bind(game)
@@ -380,6 +383,20 @@ func _start_run() -> void:
 func _on_floor_cleared(_floor_number: int, _reclaimed: Array) -> void:
 	if game.phase == Game.Phase.BENCH:
 		_show_bench()
+
+
+## A fresh turn: the felt is cleared and nothing is scoreable until the
+## player has thrown.
+func _on_turn_started() -> void:
+	if _stage != null:
+		# Bare felt for a fresh turn — except for dice staked for the night,
+		# which stay down on the faces they were sealed on.
+		var held := game.kept_dice()
+		if held.is_empty():
+			_stage.clear_table()
+		else:
+			_stage.show_held(held)
+	_refresh()
 
 
 func _on_throw_began(_strength: int) -> void:
@@ -426,9 +443,11 @@ func _on_run_ended(won: bool, reason: String) -> void:
 func _show_bench() -> void:
 	_pending_offer = {}
 	_pending_sacrifices.clear()
-	_clear_overlay(Lore.BENCH.to_upper())
-	_overlay_text("%s cleared in %d draws. The only currency is your Ledger: %s."
-		% [Lore.night(game.floor_number), game.floor_turn, Lore.lines_owed(game.card.open_count())])
+	_clear_overlay(Lore.BENCH.to_upper(), true)
+	_overlay_subtitle("OFFICIAL POSTED NOTICE · FRONTIER COURT")
+	_overlay_text("%s cleared in %s. The only currency is your Ledger: %s."
+		% [Lore.night(game.floor_number), Lore.draws(game.floor_turn),
+			Lore.lines_owed(game.card.open_count())])
 	if game.pending_carry > 0:
 		_overlay_text("You overshot; %d carries into the next night." % game.pending_carry)
 	var charm_names: Array[String] = []
@@ -436,14 +455,26 @@ func _show_bench() -> void:
 		charm_names.append(c.charm_name)
 	if not charm_names.is_empty():
 		_overlay_text("Charms: %s" % ", ".join(charm_names))
+	_overlay_rule()
+	# Every offer costs lines off the Ledger, so each is posted with its price
+	# stamped in the margin. An offer you cannot pay for stays on the board.
 	for offer in Bench.offers(game):
 		var cost := int(offer["cost"])
-		var label := "%s — %d %s\n%s" % [
-			offer["label"], cost, Lore.BOX if cost == 1 else Lore.BOXES, offer["detail"],
-		]
-		var button := _overlay_button(label, _on_bench_offer.bind(offer))
-		button.disabled = not Bench.can_afford(game, cost)
-	_overlay_button("On to %s" % Lore.night(game.floor_number + 1), _leave_bench)
+		var row := NoticeButton.new(String(offer["label"]), String(offer["detail"]),
+			"%d %s" % [cost, Lore.BOX.to_upper() if cost == 1 else Lore.BOXES.to_upper()])
+		row.affordable = Bench.can_afford(game, cost)
+		row.disabled = not row.affordable
+		row.pressed.connect(_on_bench_offer.bind(offer))
+		_overlay_body.add_child(row)
+	_overlay_rule()
+	var out := _overlay_button("On to %s" % Lore.night(game.floor_number + 1), _leave_bench)
+	out.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	out.custom_minimum_size = Vector2(0, 44)
+	for state in ["normal", "hover", "pressed"]:
+		out.add_theme_stylebox_override(state, _stamped_style(state == "hover"))
+	out.add_theme_color_override("font_color", ThemeColors.INK)
+	out.add_theme_color_override("font_hover_color", ThemeColors.LOCKED)
+	out.add_theme_color_override("font_pressed_color", ThemeColors.LOCKED)
 	_set_overlay_visible(true)
 
 
@@ -459,7 +490,7 @@ func _ask_for_sacrifice() -> void:
 		_ask_for_target()
 		return
 	var remaining := cost - _pending_sacrifices.size()
-	_clear_overlay(String(_pending_offer["label"]))
+	_clear_overlay(String(_pending_offer["label"]), true)
 	_overlay_text("Give up %d more %s. This is permanent."
 		% [remaining, Lore.BOX if remaining == 1 else Lore.BOXES])
 	for box in game.card.open_boxes():
@@ -477,18 +508,18 @@ func _ask_for_target() -> void:
 		"none":
 			_apply_bench(-1)
 		"die":
-			_clear_overlay("Which die?")
+			_clear_overlay("Which die?", true)
 			for d in game.pool.dice:
 				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_bench.bind(d.id))
 			_overlay_button("Never mind", _show_bench)
 		"bitter_die":
-			_clear_overlay("Which bitter die?")
+			_clear_overlay("Which bitter die?", true)
 			for d in game.pool.dice:
 				if d.bitter:
 					_overlay_button(d.die_name, _apply_bench.bind(d.id))
 			_overlay_button("Never mind", _show_bench)
 		"filled_box":
-			_clear_overlay("Which line do you hate?")
+			_clear_overlay("Which line do you hate?", true)
 			for box in game.card.player_boxes():
 				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_bench.bind(box))
 			_overlay_button("Never mind", _show_bench)
@@ -517,6 +548,16 @@ func _on_throw_hovered(strength: int) -> void:
 		_scene.queue_redraw()
 
 
+## The light gesture: keep this face out of the next draw. Free, reversible,
+## and only for this turn.
+func _on_die_held(die: Die) -> void:
+	if game.dice_in_the_air:
+		return
+	game.toggle_hold(die)
+	_refresh()
+
+
+## The heavy one: stake it for the night.
 func _on_die_pressed(die: Die) -> void:
 	if game.dice_in_the_air:
 		return
@@ -561,7 +602,7 @@ func _on_line_hovered(box: int) -> void:
 func _on_box_pressed(box: int) -> void:
 	if game == null or game.phase != Game.Phase.TURN or not game.card.is_open(box):
 		return
-	if game.dice_in_the_air:
+	if game.dice_in_the_air or not game.turn_rolled:
 		return
 	var value := game.preview(box)
 	_clear_overlay("%s for %d" % [Scoring.box_name(box), value])
@@ -595,7 +636,7 @@ func _on_box_pressed(box: int) -> void:
 func _refresh() -> void:
 	if game == null:
 		return
-	_night_label.text = Lore.night(game.floor_number)
+	_night_label.text = Lore.week_and_night(game.floor_number)
 	_score_label.text = "%d / %d" % [game.floor_score, game.threshold]
 	if game.floor_carry_in > 0:
 		_score_label.text += "  (%d carried)" % game.floor_carry_in
@@ -645,9 +686,13 @@ func _refresh_dice() -> void:
 		view.queue_free()
 	_die_views.clear()
 	_scene.rolling_bounds = _clear_felt()
+	# Before the draw the felt is bare, save for dice staked for the night:
+	# they are already down, and their faces still count.
 	var live: Array = []
 	for d in game.pool.table:
-		if not d.lost:
+		if d.lost:
+			continue
+		if game.turn_rolled or d.locked:
 			live.append(d)
 	var physical: bool = _stage != null and game.stage == _stage
 	for placement in _scene.place_dice(live):
@@ -669,13 +714,14 @@ func _refresh_dice() -> void:
 				view.position = at - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
 		view.sway_left = _scene.sway_left
 		view.sway_right = _scene.sway_right
-		view.pressed.connect(_on_die_pressed.bind(placement["die"]))
+		view.pressed.connect(_on_die_held.bind(placement["die"]))
+		view.stake_requested.connect(_on_die_pressed.bind(placement["die"]))
 		_die_views.append(view)
 
 
 func _refresh_throw_buttons() -> void:
 	var frozen := not game.can_throw()
-	var throws_left := game.rerolls_left
+	var throws_left := game.draws_left()
 	var free := game.free_dice_on_table()
 	for strength in _throw_buttons.size():
 		var button := _throw_buttons[strength]
@@ -717,6 +763,8 @@ func _refresh_throw_buttons() -> void:
 		_ledger.set_drawer(true)
 	_scene.dim_table = _ledger.urgent
 	_draws_label.text = "%d %s left" % [maxi(0, throws_left), "draw" if throws_left == 1 else "draws"]
+	if not game.turn_rolled and game.phase == Game.Phase.TURN:
+		_draws_label.text = "your draw"
 	_draws_label.add_theme_color_override("font_color",
 		ThemeColors.DECLARED if out_of_draws else ThemeColors.INK_DIM)
 
@@ -776,7 +824,7 @@ func _refresh_adversary() -> void:
 
 
 func _next_duel_floor() -> int:
-	for n in range(game.floor_number + 1, Game.TOTAL_FLOORS + 1):
+	for n in range(game.floor_number + 1, Game.total_nights() + 1):
 		if Balance.is_duel_floor(n):
 			return n
 	return -1
@@ -785,6 +833,10 @@ func _next_duel_floor() -> int:
 func _hint() -> String:
 	if game.phase != Game.Phase.TURN:
 		return ""
+	if not game.turn_rolled:
+		if Throw.staked_count(game.pool.table) > 0:
+			return "Only your staked dice are down. Throw the rest, and see what you are working with."
+		return "Nothing on the felt yet. Throw, and see what you are working with."
 	if not game.can_throw() or game.rerolls_left <= 0:
 		if _table_is_empty():
 			return "Every die is in the dirt. Settle a line — it will take nothing, and it is still gone for the run."
@@ -806,20 +858,78 @@ func _on_log(line: String) -> void:
 
 # --- Overlay helpers ---------------------------------------------------------
 
-func _clear_overlay(title: String) -> void:
+## `paper` puts the overlay on posted parchment rather than a dark panel. The
+## forge is a notice nailed to a wall in a lit room, not a system dialogue,
+## and paper is the player's side of this table — so the whole screen changes
+## material rather than gaining a decorative border.
+func _clear_overlay(title: String, paper: bool = false) -> void:
+	_overlay_paper = paper
 	_overlay_title.text = title
+	_overlay.add_theme_stylebox_override("panel",
+		_notice_style() if paper else ThemeColors.panel_style(ThemeColors.INK))
+	_overlay_title.add_theme_color_override("font_color",
+		Color("6b2c1a") if paper else ThemeColors.INK)
 	for child in _overlay_body.get_children():
 		_overlay_body.remove_child(child)
 		child.queue_free()
+
+
+## The one dark bar on the notice: descending is the only irreversible thing
+## on this page, so it is the only thing stamped in ink.
+func _stamped_style(hot: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("241c14") if not hot else Color("32271b")
+	box.border_color = Color("3a2a1c")
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(2)
+	box.content_margin_top = 12
+	box.content_margin_bottom = 12
+	return box
+
+
+## Parchment, with the hard dark edge of something posted on a board.
+func _notice_style() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = ThemeColors.PAPER_HI.lerp(ThemeColors.PAPER_LO, 0.12)
+	box.border_color = Color("3a2a1c")
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(2)
+	box.content_margin_left = 26
+	box.content_margin_right = 26
+	box.content_margin_top = 20
+	box.content_margin_bottom = 22
+	box.shadow_color = Color(0, 0, 0, 0.45)
+	box.shadow_size = 10
+	return box
 
 
 func _overlay_text(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
+	label.add_theme_color_override("font_color",
+		Color(ThemeColors.PENCIL, 0.85) if _overlay_paper else ThemeColors.INK_DIM)
 	_overlay_body.add_child(label)
 	return label
+
+
+## A smaller line under the title — the notice's own letterhead.
+func _overlay_subtitle(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(ThemeColors.PENCIL, 0.60))
+	_overlay_body.add_child(label)
+	return label
+
+
+## A printer's rule, separating the notice's preamble from what is on offer.
+func _overlay_rule() -> void:
+	var rule := ColorRect.new()
+	rule.color = Color(ThemeColors.PENCIL, 0.28) if _overlay_paper \
+		else Color(ThemeColors.INK_DIM, 0.25)
+	rule.custom_minimum_size = Vector2(0, 1)
+	_overlay_body.add_child(rule)
 
 
 func _overlay_button(text: String, action: Callable) -> Button:
@@ -829,5 +939,15 @@ func _overlay_button(text: String, action: Callable) -> Button:
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.pressed.connect(action)
+	if _overlay_paper:
+		# A dark system button on parchment would read as a hole in the page.
+		button.add_theme_stylebox_override("normal", _draw_button_style(0.0))
+		button.add_theme_stylebox_override("hover", _draw_button_style(0.5))
+		button.add_theme_stylebox_override("pressed", _draw_button_style(1.0))
+		button.add_theme_stylebox_override("disabled", _draw_button_style(0.0))
+		button.add_theme_color_override("font_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_hover_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_pressed_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_disabled_color", ThemeColors.BURNED)
 	_overlay_body.add_child(button)
 	return button

@@ -1,11 +1,20 @@
 class_name DieView
 extends Button
-## A worn bone die on the felt. Click to stake it — for the whole night, not
-## the turn.
+## A worn bone die on the felt. Click to hold it back from the next draw;
+## right-click to stake it for the whole night.
+##
+## Holding is free and lasts one turn, and a held die can still be knocked by
+## a landing one. Staking lasts the night and nothing can touch it.
 ##
 ## All character work goes on the body: the pip face stays clean and
 ## high-contrast so a value is never ambiguous at small scale.
 ## Source: docs/design-system/BUILD_BRIEF_table_scene.md, "The dice".
+
+signal stake_requested()
+
+## Held is its own colour: not the gold of a staked die, which is permanent
+## for the night, but clearly a die you have set aside.
+const HELD := Color("7fa055")
 
 const SIZE := 176.0
 const TUMBLE_SECONDS := 0.64
@@ -50,6 +59,13 @@ func _init() -> void:
 	focus_mode = Control.FOCUS_NONE
 	flat = true
 	text = ""
+	# Staking is the heavier of the two gestures, so it gets the heavier
+	# button rather than sharing a click with holding.
+	gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed \
+				and event.button_index == MOUSE_BUTTON_RIGHT:
+			stake_requested.emit()
+			accept_event())
 	mouse_entered.connect(func(): _hover = true; queue_redraw())
 	mouse_exited.connect(func(): _hover = false; queue_redraw())
 
@@ -67,9 +83,10 @@ func refresh() -> void:
 	queue_redraw()
 
 
-## Staked dice keep their face, so they do not tumble.
+## Dice that were kept back do not tumble — staked for the night, or held
+## for the turn, they are showing the face they already had.
 func tumble(delay: float = 0.0) -> void:
-	if die != null and die.locked:
+	if die != null and die.kept():
 		return
 	_tumble = TUMBLE_SECONDS + delay
 	set_process(true)
@@ -107,11 +124,13 @@ func _draw() -> void:
 		_draw_body_shading(body)
 		_draw_face(offset, scale_factor)
 		_draw_wear(offset)
-	elif die.locked or die.zone == Throw.Zone.RAIL or _hover:
+	elif die.kept() or die.zone == Throw.Zone.RAIL or _hover:
 		# A ring is enough to mark a real die underneath.
 		var centre := Vector2(SIZE, SIZE) * 0.5 + offset
 		var tint := ThemeColors.LOCKED if die.locked else ThemeColors.DECLARED
-		if _hover and not die.locked:
+		if die.held and not die.locked:
+			tint = HELD
+		elif _hover and not die.locked:
 			tint = ThemeColors.INK
 		draw_arc(centre, SIZE * 0.48, 0.0, TAU, 40, Color(tint, 0.85), 3.0)
 	_draw_name(offset)
@@ -119,6 +138,8 @@ func _draw() -> void:
 		_draw_cocked(offset)
 	if die.locked:
 		_draw_tag(Lore.LOCKED_TAG, ThemeColors.LOCKED)
+	elif die.held:
+		_draw_tag("KEPT", HELD)
 	elif die.zone == Throw.Zone.RAIL:
 		_draw_tag("RAIL x2", ThemeColors.DECLARED)
 	elif die.is_cocked():
@@ -128,6 +149,8 @@ func _draw() -> void:
 func _body_colour() -> Color:
 	if die.locked:
 		return Color("d9b463")
+	if die.held:
+		return Color("a8a06a")
 	if die.bitter:
 		return Color("6d5480")
 	return Color("a08a63")
@@ -239,7 +262,11 @@ func _tooltip() -> String:
 	if die.bitter:
 		lines.append("Bitter: refuses its lowest face.")
 	if die.locked:
-		lines.append("Staked for the rest of the night.")
+		lines.append("Staked for the rest of the night. Nothing can touch it.")
+	elif die.held:
+		lines.append("Kept back from the next draw. Click again to let it go.")
+	else:
+		lines.append("Click to keep it back from the next draw; right-click to stake it for the night.")
 	if die.zone == Throw.Zone.RAIL:
 		lines.append("On the rail: doubles, but the next draw shoves it toward the lip.")
 	if die.is_cocked():

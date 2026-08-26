@@ -1,11 +1,53 @@
-# Thirteen Boxes — implementation notes
+# Thirteen Boxes — mechanics
 
-The mechanics specification is the source of truth for what this game does.
-This file records how each system is implemented, and every place the build
-knowingly differs from the spec.
+## The shape of a run
 
-Numbers live in `scripts/autoload/balance.gd`. Evidence for the tuned ones is
-in [BALANCE.md](BALANCE.md), produced by `tools/curve_report.tscn`.
+A run is **5 weeks**. A week is **7 nights**. A night is as many **turns** as it
+takes to meet that night's threshold.
+
+The Ledger has thirteen lines and every turn spends one, permanently — but the
+Ledger is **wiped clean at the end of each week**. That is what makes the week
+the real unit of play: thirteen lines have to carry seven nights, not a whole
+run. Everything you scored is kept; only the paper is fresh, and every line the
+Adversary took or burned comes back with it.
+
+Surviving a week pays out **one charm**.
+
+### The night ladder
+
+Thresholds climb through a week and reset lower at the start of the next one,
+higher than the last week opened. The sawtooth is deliberate: a week should end
+harder than it began, and a new week should feel like air.
+
+    threshold = 40 x 1.55^(week-1) x 1.18^(night-1)
+
+### The man across the table
+
+He arrives later in the week early on and earlier as the run goes: week 1 he
+sits down only on the last night, week 5 for five of the seven. The last night
+of a week is always his, and it is that week's own adversary; the duel nights
+leading up to it are the ones you already beat, in the order you met them.
+
+## The turn
+
+Three draws, then settle one line.
+
+**Holding** keeps a die back from the next draw. It is free, reversible, and
+lasts only the turn you are in — it is what lets a hand be built toward a line
+at all. A held die is still sitting on the felt, so a landing die can knock it,
+and a held die on the rail is still shoved by the next throw.
+
+**Staking** keeps a die for the whole night, and nothing can touch it: it is
+never struck, never shoved, never lost. Staked dice also level — three scores
+and one of the die's faces is reshaped.
+
+A draw that would move nothing is refused rather than spent, so keeping every
+die back cannot burn a draw.
+
+Without a per-turn hold the card collapsed rather than depleted: only two or
+three lines score on any random hand, so once those were spent every remaining
+turn was a forced scratch. Measured over whole runs, the hold roughly halves
+the scratch rate and is worth more than every other decision in the turn.
 
 ## The throw
 

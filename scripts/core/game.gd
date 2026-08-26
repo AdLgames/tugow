@@ -7,18 +7,23 @@ signal log_emitted(line: String)
 signal state_changed()
 signal floor_started(floor_number: int, threshold: int)
 signal floor_cleared(floor_number: int, reclaimed: Array)
+signal week_started(week_number: int, reopened: Array)
 signal run_ended(victory: bool, reason: String)
 signal player_wrote(box: int, value: int, denied: bool)
 signal thrown(result: Throw.Result)
 ## Emitted the moment the dice leave the hand, before they land.
 signal throw_began(strength: int)
+## A fresh turn, with nothing on the table yet.
+signal turn_started()
 signal dice_lost(dice: Array)
 signal adversary_declared(box: int)
 signal adversary_acted(line: String)
 
 enum Phase { FLOOR_START, TURN, BENCH, RUN_OVER }
 
-const TOTAL_FLOORS := 12
+## Nights in a run. A run is weeks, and a week is nights; this is the product.
+static func total_nights() -> int:
+	return Balance.total_nights()
 
 var card: Scorecard
 var pool: DicePool
@@ -51,7 +56,9 @@ var last_player_values: Array = []
 var pending_carry: int = 0
 var floor_carry_in: int = 0
 ## Charms taken since this night began.
-var charms_taken_tonight: int = 0
+var charms_taken_this_week: int = 0
+## Which week the run is in, and whether this night ends one.
+var week_number: int = 0
 var log_lines: Array[String] = []
 
 
@@ -63,20 +70,29 @@ func start_run(seed_value: int = 0) -> void:
 	victory = false
 	end_reason = ""
 	log_lines.clear()
-	charms_taken_tonight = 0
+	charms_taken_this_week = 0
+	week_number = 0
 	pending_carry = 0
 	floor_carry_in = 0
-	log_line("Thirteen lines. Settle them carefully.")
+	log_line("Thirteen lines, seven nights. Settle them carefully.")
 	next_floor()
 
 
 func next_floor() -> void:
 	floor_number += 1
-	if floor_number > TOTAL_FLOORS:
+	if floor_number > total_nights():
 		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
 		return
+	# A new week means fresh paper and a charm for the one you survived. The
+	# wipe happens here rather than at the end of the last night so the
+	# Ledger you finished a week on is still readable while the night closes.
+	var week := Balance.week_of(floor_number)
+	if week != week_number:
+		week_number = week
+		charms_taken_this_week = 0
+		if floor_number > 1:
+			_begin_week()
 	threshold = Balance.threshold_for_floor(floor_number)
-	charms_taken_tonight = 0
 	floor_carry_in = pending_carry
 	floor_score = pending_carry
 	pending_carry = 0
@@ -107,13 +123,35 @@ func begin_turn() -> void:
 	rerolls_left = Balance.rerolls_per_turn
 	turn_rolled = false
 	pool.begin_turn("player")
-	throw()
+	# The felt starts bare. Nothing is on it and nothing can be settled until
+	# you have thrown — the first draw of the turn is yours to make. Staked
+	# dice are the exception: they were sealed for the night and keep the face
+	# they were sealed on.
+	for die in pool.table:
+		# Holding is for the turn you are in, so a new turn releases them all.
+		die.held = false
+		if die.locked:
+			continue
+		die.value = 0
+		die.second_value = 0
+		die.zone = Throw.Zone.POT
+	# With every die staked there is nothing left to throw, so the faces on
+	# the felt are already the hand. Count the turn as drawn or the night
+	# deadlocks with no legal move.
+	if not can_throw():
+		turn_rolled = true
+	turn_started.emit()
+	state_changed.emit()
 
 
 ## Throw strength is the main risk dial: soft never reaches the rail, hard
 ## scatters wide and can put dice off the table for the rest of the floor.
 func throw(strength: int = -1) -> void:
 	if phase != Phase.TURN or dice_in_the_air:
+		return
+	# Every die kept back means the throw would change nothing. Spending a
+	# draw on it would be a pure loss, so it is refused instead.
+	if turn_rolled and throwable_dice() == 0:
 		return
 	if turn_rolled:
 		if rerolls_left <= 0:
@@ -137,7 +175,7 @@ func throw(strength: int = -1) -> void:
 		dice_in_the_air = true
 		state_changed.emit()
 		stage.begin_throw(throw_strength, _throw_seeds.randi(),
-			_staked_dice(), _thrown_ids())
+			kept_dice(), _thrown_ids())
 		return
 	last_throw = pool.throw_table(throw_strength, has_charm(&"long_throw"))
 	_finish_throw(pushed)
@@ -153,11 +191,12 @@ func _thrown_ids() -> Array:
 	return ids
 
 
-## Staked dice are not thrown: the stage sets them down showing their face.
-func _staked_dice() -> Array:
+## Dice that are not being thrown — staked for the night or held for the
+## turn. The stage sets them down showing the face they already have.
+func kept_dice() -> Array:
 	var held: Array = []
 	for die in pool.table:
-		if die.locked and not die.lost:
+		if die.kept() and not die.lost:
 			held.append({
 				"id": die.id,
 				"value": die.value,
@@ -218,6 +257,11 @@ func roll() -> void:
 
 
 ## Every die on the table is locked or gone: there is nothing to throw.
+## Draws left this turn, including the first one if it has not been made.
+func draws_left() -> int:
+	return rerolls_left + (0 if turn_rolled else 1)
+
+
 func can_throw() -> bool:
 	for d in pool.table:
 		if not d.locked and not d.lost:
@@ -225,10 +269,39 @@ func can_throw() -> bool:
 	return false
 
 
+## Keep a die back from the next draw, for this turn only. Free, reversible,
+## and the reason a hand can be built toward a line at all — but a held die is
+## still on the felt, where a landing die can knock it to a new face.
+func toggle_hold(die: Die) -> void:
+	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
+		return
+	die.held = not die.held
+	state_changed.emit()
+
+
+func hold_die(die: Die, on: bool = true) -> void:
+	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
+		return
+	if die.held == on:
+		return
+	die.held = on
+	state_changed.emit()
+
+
+## Dice that would actually move if you threw now.
+func throwable_dice() -> int:
+	var n := 0
+	for d in pool.table:
+		if not d.kept() and not d.lost:
+			n += 1
+	return n
+
+
 ## Locked is locked for the entire floor, not the turn.
 func lock_die(die: Die) -> void:
 	if phase != Phase.TURN or die.locked or die.value == 0:
 		return
+	die.held = false
 	pool.lock_die(die, "player")
 	for c in charms:
 		c.on_lock(self, die)
@@ -253,6 +326,8 @@ func would_lock_out(die: Die) -> bool:
 
 
 func preview(box: int) -> int:
+	if not turn_rolled:
+		return 0
 	var values := table_values()
 	var base := int(round(Scoring.score(box, values) * Throw.rail_multiplier(pool.table)))
 	for c in charms:
@@ -272,6 +347,9 @@ func table_values() -> Array:
 ## Write into a box. This is the turn: one roll, one box, gone for the run.
 func write_box(box: int) -> void:
 	if phase != Phase.TURN or not card.is_open(box):
+		return
+	# You settle a line against dice. Before the first throw there are none.
+	if not turn_rolled:
 		return
 	var values := table_values()
 	var value := preview(box)
@@ -348,12 +426,13 @@ func _clear_floor() -> void:
 		else:
 			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
 				% [adversary.display_name, adversary.duel_score, earned])
-	log_line("%s cleared in %d draws. %s." % [Lore.night(floor_number), floor_turn, Lore.lines_owed(card.open_count())])
+	log_line("%s cleared in %s. %s." % [Lore.night(floor_number), Lore.draws(floor_turn),
+		Lore.lines_owed(card.open_count())])
 	if adversary != null:
 		# The night is over; nothing is on call any more.
 		adversary.declared_box = -1
 	_bank_overflow()
-	if floor_number >= TOTAL_FLOORS:
+	if floor_number >= total_nights():
 		floor_cleared.emit(floor_number, reclaimed)
 		_end_run(true, "Twelve nights down with %s." % Lore.lines_owed(card.open_count()))
 		return
@@ -377,6 +456,20 @@ func _bank_overflow() -> void:
 	log_line("Overshot by %d. %d carries to %s." % [overflow, pending_carry, Lore.night(floor_number + 1).to_lower()])
 
 
+## Turning the page. Thirteen lines have to carry seven nights, so the wipe is
+## the reward for surviving one — every line the Adversary took or burned
+## comes back with it.
+func _begin_week() -> void:
+	var wiped := card.new_week()
+	log_line("--- Week %d. Fresh paper: %d lines back. ---" % [week_number, wiped.size()])
+	week_started.emit(week_number, wiped)
+
+
+## Nights left in the current week, including tonight.
+func nights_left_in_week() -> int:
+	return Balance.nights_per_week - Balance.night_of(floor_number) + 1
+
+
 func leave_bench() -> void:
 	if phase != Phase.BENCH:
 		return
@@ -385,7 +478,7 @@ func leave_bench() -> void:
 
 func take_charm(charm: Charm) -> void:
 	charms.append(charm)
-	charms_taken_tonight += 1
+	charms_taken_this_week += 1
 	log_line("Charm taken: %s — %s" % [charm.charm_name, charm.text])
 	state_changed.emit()
 

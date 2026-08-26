@@ -20,6 +20,10 @@ func _ready() -> void:
 	_test_charm_limit()
 	_test_denial()
 	_test_floor_transition()
+	_test_hold()
+	_test_hold_does_not_waste_draws()
+	_test_weekly_reset()
+	_test_duel_cadence()
 	_test_overflow_carry()
 	_test_lock_out_guard()
 	_test_free_dice_excludes_lost()
@@ -144,6 +148,7 @@ func _test_dice_behaviour() -> void:
 func _test_locking_narrows_the_table() -> void:
 	var game := Game.new()
 	game.start_run(1234)
+	game.throw()
 	var first_size := game.pool.table.size()
 	check(first_size == Balance.dice_per_roll, "you roll five dice")
 	game.lock_die(game.pool.table[0])
@@ -233,9 +238,14 @@ func _test_charm_limit() -> void:
 	for offer in Bench.offers(game):
 		offered_ids.append(offer["id"])
 	check(not offered_ids.has(&"take_charm"), "the charm is off the board once taken")
+	# Charms are what a finished week pays out, so the next night inside the
+	# same week offers nothing more.
 	game.next_floor()
-	check(Bench.next_charm(game) != null, "the next night offers another")
-	check(game.charms_taken_tonight == 0, "the count resets with the night")
+	check(Bench.next_charm(game) == null, "the next night of the same week offers no charm")
+	while Balance.week_of(game.floor_number) == 1:
+		game.next_floor()
+	check(Bench.next_charm(game) != null, "a new week offers another")
+	check(game.charms_taken_this_week == 0, "the count resets with the week")
 
 
 func _test_adversaries() -> void:
@@ -280,6 +290,7 @@ func _test_denial() -> void:
 	game.start_run(555)
 	game.adversary = AdversaryRoster.Taxman.new()
 	game.adversary.on_duel_start(game)
+	game.throw()
 	var target := game.adversary.declare(game)
 	var denials: Array = []
 	game.player_wrote.connect(func(box, _value, denied): denials.append([box, denied]))
@@ -295,6 +306,7 @@ func _test_floor_transition() -> void:
 	# Captured through an array: GDScript lambdas copy plain locals.
 	var phase_at_signal: Array[int] = []
 	game.floor_cleared.connect(func(_n, _r): phase_at_signal.append(game.phase))
+	game.throw()
 	game.floor_score = game.threshold
 	game.write_box(Scoring.Box.CHANCE)
 	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.BENCH,
@@ -309,16 +321,133 @@ func _test_floor_transition() -> void:
 	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
 
 
+## Holding keeps a face for one turn. It is what lets a hand be built toward
+## a line at all, and it is deliberately weaker than staking.
+func _test_hold() -> void:
+	var game := Game.new()
+	game.start_run(9001)
+	game.throw(Throw.Strength.SOFT)
+	var die: Die = game.pool.table[0]
+	while die.lost or die.value == 0:
+		game.pool.table.remove_at(0)
+		die = game.pool.table[0]
+	var face := die.value
+
+	game.toggle_hold(die)
+	check(die.held, "a die can be kept back")
+	check(die.kept() and not die.locked, "kept, but not staked")
+	game.throw(Throw.Strength.SOFT)
+	check(die.value == face, "a held die keeps its face through a draw")
+
+	game.toggle_hold(die)
+	check(not die.held, "and can be let go again")
+
+	# Holding is for the turn you are in.
+	game.hold_die(die, true)
+	game.write_box(game.card.open_boxes()[0])
+	for d in game.pool.table:
+		check(not d.held, "a new turn releases every hold")
+
+	# Staking supersedes a hold, and cannot be undone by clicking again.
+	var g2 := Game.new()
+	g2.start_run(9002)
+	g2.throw(Throw.Strength.SOFT)
+	var keeper: Die = null
+	for d in g2.pool.table:
+		if not d.lost and d.value > 0 and not g2.would_lock_out(d):
+			keeper = d
+			break
+	if keeper != null:
+		g2.hold_die(keeper, true)
+		g2.lock_die(keeper)
+		check(keeper.locked and not keeper.held, "staking a held die takes over the hold")
+		g2.toggle_hold(keeper)
+		check(not keeper.held, "a staked die cannot be un-held")
+
+
+## A draw that cannot move a die is refused rather than spent.
+func _test_hold_does_not_waste_draws() -> void:
+	var game := Game.new()
+	game.start_run(9003)
+	game.throw(Throw.Strength.SOFT)
+	for d in game.pool.table:
+		game.hold_die(d, true)
+	check(game.throwable_dice() == 0, "nothing left that would move")
+	var before := game.rerolls_left
+	game.throw(Throw.Strength.SOFT)
+	check(game.rerolls_left == before, "the draw is not spent on a table that cannot change")
+
+
+## A week is the unit of play: thirteen lines have to carry seven nights, and
+## surviving one hands the paper back.
+func _test_weekly_reset() -> void:
+	var game := Game.new()
+	game.start_run(4477)
+	check(Balance.week_of(1) == 1 and Balance.night_of(1) == 1, "the run opens on week 1 night 1")
+	check(Balance.week_of(Balance.nights_per_week + 1) == 2,
+		"the night after a full week starts the next one")
+
+	game.card.write_player(Scoring.Box.ACES, 12)
+	game.card.write_adversary(Scoring.Box.TWOS, 8)
+	game.card.burn(Scoring.Box.THREES)
+	var banked := game.card.run_total
+	check(game.card.open_count() == Scoring.BOX_COUNT - 3, "three lines are gone")
+
+	var wiped := game.card.new_week()
+	check(wiped.size() == 3, "every spent line comes back, his and burned alike")
+	check(game.card.open_count() == Scoring.BOX_COUNT, "the card is whole again")
+	check(game.card.run_total == banked, "what was scored is kept")
+	check(game.card.spend_order.is_empty(), "and nothing is still marked spent")
+
+	# The run total still reconciles: nothing is stranded by the wipe.
+	var owed := 0
+	for box in game.card.player_boxes():
+		owed += game.card.points[box]
+	check(owed + game.card.reclaimed_total == game.card.run_total,
+		"the total reconciles across the wipe")
+
+	# Playing through a whole week hands the paper back on its own.
+	var fresh := Game.new()
+	fresh.start_run(4478)
+	while Balance.week_of(fresh.floor_number) == 1 and fresh.phase != Game.Phase.RUN_OVER:
+		fresh.card.write_player(fresh.card.open_boxes()[0], 5)
+		if fresh.phase == Game.Phase.BENCH:
+			fresh.leave_bench()
+		else:
+			fresh.next_floor()
+	check(fresh.phase == Game.Phase.RUN_OVER or fresh.card.open_count() == Scoring.BOX_COUNT,
+		"crossing into a new week wipes the card without being asked")
+
+
+## He arrives later in the week early on, and earlier as the run goes.
+func _test_duel_cadence() -> void:
+	var counts: Array[int] = []
+	for week in range(1, Balance.weeks_per_run + 1):
+		var n := 0
+		for night in range(1, Balance.nights_per_week + 1):
+			if Balance.is_duel_floor((week - 1) * Balance.nights_per_week + night):
+				n += 1
+		counts.append(n)
+	check(counts[0] == 1, "week 1 has him on one night")
+	for i in range(1, counts.size()):
+		check(counts[i] > counts[i - 1], "each week puts him at the table more often")
+	check(Balance.is_duel_floor(Balance.nights_per_week),
+		"the last night of a week is always his")
+
+
 ## Overshoot carries instead of evaporating.
 func _test_overflow_carry() -> void:
 	var game := Game.new()
 	game.start_run(21)
 	var next_threshold := Balance.threshold_for_floor(2)
-	game.floor_score = game.threshold + 40
+	# Under the cap, so the whole overshoot carries.
+	var overshoot := int(next_threshold * Balance.overflow_carry_cap) - 1
+	game.floor_score = game.threshold + overshoot
 	game._bank_overflow()
-	check(game.pending_carry == 40, "the overshoot banks")
+	check(game.pending_carry == overshoot, "the overshoot banks")
 	game.leave_bench() if game.phase == Game.Phase.BENCH else game.next_floor()
-	check(game.floor_carry_in == 40 and game.floor_score == 40, "it opens the next floor")
+	check(game.floor_carry_in == overshoot and game.floor_score == overshoot,
+		"it opens the next floor")
 	check(game.pending_carry == 0, "and is spent once")
 
 	# A monster turn cannot skip a floor outright.
@@ -358,6 +487,7 @@ func _test_free_dice_excludes_lost() -> void:
 func _test_lock_out_guard() -> void:
 	var game := Game.new()
 	game.start_run(31)
+	game.throw()
 	check(game.free_dice_on_table() == Balance.dice_per_roll, "five free dice to start")
 	while game.free_dice_on_table() > 1:
 		for d in game.pool.table:
@@ -565,6 +695,7 @@ func _test_rail_multiplier() -> void:
 func _test_lost_dice_are_floor_long() -> void:
 	var game := Game.new()
 	game.start_run(808)
+	game.throw()
 	# Pick a die that is actually on the table with a face on it: the opening
 	# throw can already have put one in the dirt, and a die that was never
 	# worth anything cannot demonstrate that losing it costs you something.
