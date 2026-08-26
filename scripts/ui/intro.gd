@@ -31,7 +31,7 @@ static func pages() -> Array:
 		"You are trading what you might roll for what you already have. The table narrows as the night goes on, and that is the same bargain the Ledger makes.",
 	]))
 	out.append(Page.new("THE POT, THE RAIL, THE DIRT", [
-		"Choose how hard you throw. Soft keeps the dice in the pot. Hard scatters them to the rail, where they score double, and past it into the dirt, where they are gone for the night.",
+		"Choose how you throw. Careful keeps the dice in the pot. Damn Fool scatters them to the rail, where they score double, and past it into the dirt, where they are gone for the night.",
 		"A die on the rail is not safe: the next draw shoves it toward the lip. Stake it, settle now, or gamble it.",
 	]))
 	out.append(Page.new("THE MAN OPPOSITE", [

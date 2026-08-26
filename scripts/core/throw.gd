@@ -8,10 +8,13 @@ extends RefCounted
 enum Strength { SOFT, MEDIUM, HARD }
 enum Zone { POT, RAIL, LOST }
 
+## Named for what the throw says about you rather than for its force: this
+## is a game about nerve and debt, and "medium" is not a word anyone at this
+## table would use.
 const STRENGTH_NAMES := {
-	Strength.SOFT: "Soft",
-	Strength.MEDIUM: "Medium",
-	Strength.HARD: "Hard",
+	Strength.SOFT: "Careful",
+	Strength.MEDIUM: "Chancy",
+	Strength.HARD: "Damn Fool",
 }
 
 ## One line each, shown on the button itself.

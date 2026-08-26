@@ -14,6 +14,7 @@ var game: Game
 var _scene: SaloonView
 var _dice_layer: Control
 var _die_views: Array[DieView] = []
+var _ledger_well: Control
 var _ledger: LedgerView
 var _tray: DiceTray
 var _stage: DiceStage
@@ -50,6 +51,23 @@ func _ready() -> void:
 		_show_title()
 
 
+## Labels belong to bodies that move. Repositioning them only when the game
+## state changes leaves them lagging behind the dice — and during a throw the
+## dice are moving the whole time.
+func _process(_delta: float) -> void:
+	if _stage == null or game == null:
+		return
+	for view in _die_views:
+		if view.die == null:
+			continue
+		var at := _stage.screen_position_of(view.die.id)
+		if at.x <= -900.0:
+			view.visible = false
+			continue
+		view.visible = true
+		view.position = at - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * view.scale.x
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F3:
 		if _debug_panel != null:
@@ -67,11 +85,25 @@ func _build() -> void:
 	_dice_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_dice_layer)
 
+	# The well the sheet slides in. It clips at the bottom bar, so a tucked
+	# Ledger is cut off by the bar rather than drawn across it.
+	_ledger_well = Control.new()
+	_ledger_well.position = Vector2(74, 300)
+	_ledger_well.size = Vector2(LedgerView.WIDTH + 24, 590)
+	_ledger_well.clip_contents = true
+	_ledger_well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_ledger_well)
+
 	_ledger = LedgerView.new()
-	_ledger.position = Vector2(74, 418)
+	# Fully out it sits on the table; closed, a quarter of it shows above the
+	# bar. It starts closed — the dice are what you are looking at.
+	_ledger.open_position = Vector2(0, _ledger_well.size.y - _ledger.size.y)
+	_ledger.closed_position = Vector2(0, _ledger_well.size.y - _ledger.size.y * LedgerView.PEEK)
+	_ledger.set_drawer(false, false)
 	_ledger.line_pressed.connect(_on_box_pressed)
 	_ledger.line_hovered.connect(_on_line_hovered)
-	add_child(_ledger)
+	_ledger.drawer_toggled.connect(_on_drawer_toggled)
+	_ledger_well.add_child(_ledger)
 
 	_tray = DiceTray.new()
 	_tray.position = Vector2(752, 838)
@@ -208,11 +240,11 @@ func _build_lip_strip() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(190, 56)
 		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
-		button.add_theme_color_override("font_color", ThemeColors.INK)
+		button.add_theme_color_override("font_color", ThemeColors.PENCIL)
 		button.add_theme_stylebox_override("normal", _draw_button_style(0.35))
 		button.add_theme_stylebox_override("hover", _draw_button_style(1.0))
 		button.add_theme_stylebox_override("pressed", _draw_button_style(1.0))
-		button.add_theme_stylebox_override("disabled", _draw_button_style(0.12))
+		button.add_theme_stylebox_override("disabled", _draw_button_style(0.0))
 		button.pressed.connect(_on_throw_pressed.bind(strength))
 		button.mouse_entered.connect(_on_throw_hovered.bind(strength))
 		strip.add_child(button)
@@ -228,13 +260,16 @@ func _build_lip_strip() -> void:
 	add_child(_hint_label)
 
 
-## The mock's .rollbtn: raised panel, gold edge that lifts on hover.
-func _draw_button_style(edge_alpha: float) -> StyleBoxFlat:
+## A stub torn from the same block as the Ledger and the dice slips. Paper is
+## the player's side of this table; the last dark panels with gold edges were
+## the only interface furniture left on it.
+func _draw_button_style(weight: float) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color("231f2d")
-	box.border_color = Color(ThemeColors.LOCKED, edge_alpha)
+	box.bg_color = ThemeColors.PAPER_HI.lerp(ThemeColors.PAPER_LO, 0.35 - weight * 0.3)
+	box.border_color = Color(0.10, 0.08, 0.13, 0.10 + weight * 0.35)
 	box.set_border_width_all(1)
-	box.set_corner_radius_all(4)
+	box.border_width_bottom = 3
+	box.set_corner_radius_all(2)
 	box.content_margin_left = 18
 	box.content_margin_right = 18
 	box.content_margin_top = 10
@@ -502,6 +537,14 @@ func _on_die_pressed(die: Die) -> void:
 
 
 ## A preview that shows only the reward is half the decision.
+## With the Ledger tucked away the felt below it is clear, so the dice have
+## the run of the table.
+func _on_drawer_toggled(_open: bool) -> void:
+	if _scene != null:
+		_scene.rolling_bounds = _clear_felt()
+	_hint_label.text = _hint()
+
+
 func _on_line_hovered(box: int) -> void:
 	if game == null or box < 0 or game.phase != Game.Phase.TURN or not game.card.is_open(box):
 		_hint_label.text = _hint()
@@ -538,6 +581,7 @@ func _on_box_pressed(box: int) -> void:
 	commit.held.connect(func() -> void:
 		_set_overlay_visible(false)
 		game.write_box(box)
+		_ledger.set_drawer(false)
 		_refresh())
 	_overlay_body.add_child(commit)
 	_overlay_button("Back", func() -> void:
@@ -581,7 +625,13 @@ func _refresh() -> void:
 ## the Ledger, below the man opposite, above the dice tray. Derived from the
 ## real node rectangles so it cannot drift out of step with them.
 func _clear_felt() -> Rect2:
-	var left := _ledger.position.x + _ledger.size.x + 40.0
+	# Measured against the sheet as it sits now: tucked away it takes only a
+	# strip at the bottom, and the dice get the rest.
+	var ledger_top := _ledger_well.position.y + _ledger.position.y
+	var left := _ledger_well.position.x + _ledger.size.x + 40.0
+	if ledger_top > 700.0:
+		# Tucked away: the felt below is clear, so the dice get the table.
+		left = 760.0
 	var top := 540.0
 	var bottom := _tray.position.y - 24.0
 	var right := 1880.0
@@ -646,13 +696,15 @@ func _refresh_throw_buttons() -> void:
 			reason if reason != "" else Throw.STRENGTH_SHORT[strength],
 		]
 		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
-		var tint := ThemeColors.INK
+		# Written on the stub: green ink for the careful throw, pencil for the
+		# ordinary one, red for the one that loses dice.
+		var tint := ThemeColors.PENCIL
 		if reason != "":
-			tint = ThemeColors.BURNED
+			tint = Color(0.10, 0.08, 0.13, 0.35)
 		elif strength == Throw.Strength.HARD:
-			tint = ThemeColors.DECLARED
+			tint = ThemeColors.SCRATCH_RED
 		elif strength == Throw.Strength.SOFT:
-			tint = ThemeColors.PLAYER
+			tint = Color("2f5c39")
 		button.add_theme_color_override("font_color", tint)
 		button.add_theme_color_override("font_disabled_color", tint)
 
@@ -660,6 +712,9 @@ func _refresh_throw_buttons() -> void:
 	# light on the Ledger rather than the table.
 	var out_of_draws := throws_left <= 0 or frozen
 	_ledger.urgent = out_of_draws and game.phase == Game.Phase.TURN
+	if _ledger.urgent and not _ledger.drawer_open:
+		# The only legal move is on the sheet, so do not make them find it.
+		_ledger.set_drawer(true)
 	_scene.dim_table = _ledger.urgent
 	_draws_label.text = "%d %s left" % [maxi(0, throws_left), "draw" if throws_left == 1 else "draws"]
 	_draws_label.add_theme_color_override("font_color",

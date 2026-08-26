@@ -112,7 +112,9 @@ static func basis_showing(value: int) -> Basis:
 			return Basis.IDENTITY
 		if axis.is_equal_approx(Vector3.DOWN):
 			return Basis(Vector3.RIGHT, PI)
-		return Basis(axis.cross(Vector3.UP).normalized(), -PI * 0.5)
+		# Turned so the wanted face ends up on top. The other way round puts
+		# it face down, and the die shows its opposite.
+		return Basis(axis.cross(Vector3.UP).normalized(), PI * 0.5)
 	return Basis.IDENTITY
 
 
