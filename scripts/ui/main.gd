@@ -240,11 +240,11 @@ func _build_lip_strip() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(190, 56)
 		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
-		button.add_theme_color_override("font_color", ThemeColors.INK)
+		button.add_theme_color_override("font_color", ThemeColors.PENCIL)
 		button.add_theme_stylebox_override("normal", _draw_button_style(0.35))
 		button.add_theme_stylebox_override("hover", _draw_button_style(1.0))
 		button.add_theme_stylebox_override("pressed", _draw_button_style(1.0))
-		button.add_theme_stylebox_override("disabled", _draw_button_style(0.12))
+		button.add_theme_stylebox_override("disabled", _draw_button_style(0.0))
 		button.pressed.connect(_on_throw_pressed.bind(strength))
 		button.mouse_entered.connect(_on_throw_hovered.bind(strength))
 		strip.add_child(button)
@@ -260,13 +260,16 @@ func _build_lip_strip() -> void:
 	add_child(_hint_label)
 
 
-## The mock's .rollbtn: raised panel, gold edge that lifts on hover.
-func _draw_button_style(edge_alpha: float) -> StyleBoxFlat:
+## A stub torn from the same block as the Ledger and the dice slips. Paper is
+## the player's side of this table; the last dark panels with gold edges were
+## the only interface furniture left on it.
+func _draw_button_style(weight: float) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color("231f2d")
-	box.border_color = Color(ThemeColors.LOCKED, edge_alpha)
+	box.bg_color = ThemeColors.PAPER_HI.lerp(ThemeColors.PAPER_LO, 0.35 - weight * 0.3)
+	box.border_color = Color(0.10, 0.08, 0.13, 0.10 + weight * 0.35)
 	box.set_border_width_all(1)
-	box.set_corner_radius_all(4)
+	box.border_width_bottom = 3
+	box.set_corner_radius_all(2)
 	box.content_margin_left = 18
 	box.content_margin_right = 18
 	box.content_margin_top = 10
@@ -693,13 +696,15 @@ func _refresh_throw_buttons() -> void:
 			reason if reason != "" else Throw.STRENGTH_SHORT[strength],
 		]
 		button.tooltip_text = Throw.STRENGTH_BLURBS[strength]
-		var tint := ThemeColors.INK
+		# Written on the stub: green ink for the careful throw, pencil for the
+		# ordinary one, red for the one that loses dice.
+		var tint := ThemeColors.PENCIL
 		if reason != "":
-			tint = ThemeColors.BURNED
+			tint = Color(0.10, 0.08, 0.13, 0.35)
 		elif strength == Throw.Strength.HARD:
-			tint = ThemeColors.DECLARED
+			tint = ThemeColors.SCRATCH_RED
 		elif strength == Throw.Strength.SOFT:
-			tint = ThemeColors.PLAYER
+			tint = Color("2f5c39")
 		button.add_theme_color_override("font_color", tint)
 		button.add_theme_color_override("font_disabled_color", tint)
 

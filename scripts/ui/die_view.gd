@@ -206,9 +206,12 @@ func _draw_name(offset: Vector2) -> void:
 	var font := ThemeDB.fallback_font
 	var label := die.die_name.to_upper()
 	var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
-	var at := Vector2((SIZE - width) * 0.5, -12) + offset
-	draw_string(font, at + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
-		Color(0, 0, 0, 0.65))
+	# Clear of the die itself: the rendered cube stands taller on screen than
+	# the flat one this label was placed for.
+	var at := Vector2((SIZE - width) * 0.5, -34) + offset
+	for shadow in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		draw_string(font, at + shadow, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+			Color(0, 0, 0, 0.75))
 	draw_string(font, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
 		ThemeColors.LOCKED if die.locked else ThemeColors.INK_DIM)
 
