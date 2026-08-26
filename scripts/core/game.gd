@@ -376,7 +376,8 @@ func _clear_floor() -> void:
 		else:
 			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
 				% [adversary.display_name, adversary.duel_score, earned])
-	log_line("%s cleared in %d draws. %s." % [Lore.night(floor_number), floor_turn, Lore.lines_owed(card.open_count())])
+	log_line("%s cleared in %s. %s." % [Lore.night(floor_number), Lore.draws(floor_turn),
+		Lore.lines_owed(card.open_count())])
 	if adversary != null:
 		# The night is over; nothing is on call any more.
 		adversary.declared_box = -1

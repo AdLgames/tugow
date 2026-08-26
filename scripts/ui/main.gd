@@ -33,6 +33,7 @@ var _charm_label: Label
 var _log_view: RichTextLabel
 var _scrim: ColorRect
 var _overlay: PanelContainer
+var _overlay_paper := false
 var _overlay_title: Label
 var _overlay_body: VBoxContainer
 var _debug_panel: DebugPanel
@@ -106,8 +107,10 @@ func _build() -> void:
 	_ledger_well.add_child(_ledger)
 
 	_tray = DiceTray.new()
-	_tray.position = Vector2(752, 838)
-	_tray.size = Vector2(1150, 54)
+	# The tray has a wooden surround now, so it grows upward from the same
+	# bottom edge rather than pushing into the lip strip.
+	_tray.position = Vector2(752, 816)
+	_tray.size = Vector2(1150, DiceTray.ENTRY.y + DiceTray.PAD * 2.0)
 	add_child(_tray)
 
 	# The physical dice, rendered into the clear felt. The 2D die views become
@@ -440,9 +443,11 @@ func _on_run_ended(won: bool, reason: String) -> void:
 func _show_bench() -> void:
 	_pending_offer = {}
 	_pending_sacrifices.clear()
-	_clear_overlay(Lore.BENCH.to_upper())
-	_overlay_text("%s cleared in %d draws. The only currency is your Ledger: %s."
-		% [Lore.night(game.floor_number), game.floor_turn, Lore.lines_owed(game.card.open_count())])
+	_clear_overlay(Lore.BENCH.to_upper(), true)
+	_overlay_subtitle("OFFICIAL POSTED NOTICE · FRONTIER COURT")
+	_overlay_text("%s cleared in %s. The only currency is your Ledger: %s."
+		% [Lore.night(game.floor_number), Lore.draws(game.floor_turn),
+			Lore.lines_owed(game.card.open_count())])
 	if game.pending_carry > 0:
 		_overlay_text("You overshot; %d carries into the next night." % game.pending_carry)
 	var charm_names: Array[String] = []
@@ -450,14 +455,26 @@ func _show_bench() -> void:
 		charm_names.append(c.charm_name)
 	if not charm_names.is_empty():
 		_overlay_text("Charms: %s" % ", ".join(charm_names))
+	_overlay_rule()
+	# Every offer costs lines off the Ledger, so each is posted with its price
+	# stamped in the margin. An offer you cannot pay for stays on the board.
 	for offer in Bench.offers(game):
 		var cost := int(offer["cost"])
-		var label := "%s — %d %s\n%s" % [
-			offer["label"], cost, Lore.BOX if cost == 1 else Lore.BOXES, offer["detail"],
-		]
-		var button := _overlay_button(label, _on_bench_offer.bind(offer))
-		button.disabled = not Bench.can_afford(game, cost)
-	_overlay_button("On to %s" % Lore.night(game.floor_number + 1), _leave_bench)
+		var row := NoticeButton.new(String(offer["label"]), String(offer["detail"]),
+			"%d %s" % [cost, Lore.BOX.to_upper() if cost == 1 else Lore.BOXES.to_upper()])
+		row.affordable = Bench.can_afford(game, cost)
+		row.disabled = not row.affordable
+		row.pressed.connect(_on_bench_offer.bind(offer))
+		_overlay_body.add_child(row)
+	_overlay_rule()
+	var out := _overlay_button("On to %s" % Lore.night(game.floor_number + 1), _leave_bench)
+	out.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	out.custom_minimum_size = Vector2(0, 44)
+	for state in ["normal", "hover", "pressed"]:
+		out.add_theme_stylebox_override(state, _stamped_style(state == "hover"))
+	out.add_theme_color_override("font_color", ThemeColors.INK)
+	out.add_theme_color_override("font_hover_color", ThemeColors.LOCKED)
+	out.add_theme_color_override("font_pressed_color", ThemeColors.LOCKED)
 	_set_overlay_visible(true)
 
 
@@ -473,7 +490,7 @@ func _ask_for_sacrifice() -> void:
 		_ask_for_target()
 		return
 	var remaining := cost - _pending_sacrifices.size()
-	_clear_overlay(String(_pending_offer["label"]))
+	_clear_overlay(String(_pending_offer["label"]), true)
 	_overlay_text("Give up %d more %s. This is permanent."
 		% [remaining, Lore.BOX if remaining == 1 else Lore.BOXES])
 	for box in game.card.open_boxes():
@@ -491,18 +508,18 @@ func _ask_for_target() -> void:
 		"none":
 			_apply_bench(-1)
 		"die":
-			_clear_overlay("Which die?")
+			_clear_overlay("Which die?", true)
 			for d in game.pool.dice:
 				_overlay_button("%s — faces %s" % [d.die_name, str(Array(d.faces))], _apply_bench.bind(d.id))
 			_overlay_button("Never mind", _show_bench)
 		"bitter_die":
-			_clear_overlay("Which bitter die?")
+			_clear_overlay("Which bitter die?", true)
 			for d in game.pool.dice:
 				if d.bitter:
 					_overlay_button(d.die_name, _apply_bench.bind(d.id))
 			_overlay_button("Never mind", _show_bench)
 		"filled_box":
-			_clear_overlay("Which line do you hate?")
+			_clear_overlay("Which line do you hate?", true)
 			for box in game.card.player_boxes():
 				_overlay_button("%s — %d" % [Scoring.box_name(box), game.card.points[box]], _apply_bench.bind(box))
 			_overlay_button("Never mind", _show_bench)
@@ -830,20 +847,78 @@ func _on_log(line: String) -> void:
 
 # --- Overlay helpers ---------------------------------------------------------
 
-func _clear_overlay(title: String) -> void:
+## `paper` puts the overlay on posted parchment rather than a dark panel. The
+## forge is a notice nailed to a wall in a lit room, not a system dialogue,
+## and paper is the player's side of this table — so the whole screen changes
+## material rather than gaining a decorative border.
+func _clear_overlay(title: String, paper: bool = false) -> void:
+	_overlay_paper = paper
 	_overlay_title.text = title
+	_overlay.add_theme_stylebox_override("panel",
+		_notice_style() if paper else ThemeColors.panel_style(ThemeColors.INK))
+	_overlay_title.add_theme_color_override("font_color",
+		Color("6b2c1a") if paper else ThemeColors.INK)
 	for child in _overlay_body.get_children():
 		_overlay_body.remove_child(child)
 		child.queue_free()
+
+
+## The one dark bar on the notice: descending is the only irreversible thing
+## on this page, so it is the only thing stamped in ink.
+func _stamped_style(hot: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("241c14") if not hot else Color("32271b")
+	box.border_color = Color("3a2a1c")
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(2)
+	box.content_margin_top = 12
+	box.content_margin_bottom = 12
+	return box
+
+
+## Parchment, with the hard dark edge of something posted on a board.
+func _notice_style() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = ThemeColors.PAPER_HI.lerp(ThemeColors.PAPER_LO, 0.12)
+	box.border_color = Color("3a2a1c")
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(2)
+	box.content_margin_left = 26
+	box.content_margin_right = 26
+	box.content_margin_top = 20
+	box.content_margin_bottom = 22
+	box.shadow_color = Color(0, 0, 0, 0.45)
+	box.shadow_size = 10
+	return box
 
 
 func _overlay_text(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_color_override("font_color", ThemeColors.INK_DIM)
+	label.add_theme_color_override("font_color",
+		Color(ThemeColors.PENCIL, 0.85) if _overlay_paper else ThemeColors.INK_DIM)
 	_overlay_body.add_child(label)
 	return label
+
+
+## A smaller line under the title — the notice's own letterhead.
+func _overlay_subtitle(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(ThemeColors.PENCIL, 0.60))
+	_overlay_body.add_child(label)
+	return label
+
+
+## A printer's rule, separating the notice's preamble from what is on offer.
+func _overlay_rule() -> void:
+	var rule := ColorRect.new()
+	rule.color = Color(ThemeColors.PENCIL, 0.28) if _overlay_paper \
+		else Color(ThemeColors.INK_DIM, 0.25)
+	rule.custom_minimum_size = Vector2(0, 1)
+	_overlay_body.add_child(rule)
 
 
 func _overlay_button(text: String, action: Callable) -> Button:
@@ -853,5 +928,15 @@ func _overlay_button(text: String, action: Callable) -> Button:
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.pressed.connect(action)
+	if _overlay_paper:
+		# A dark system button on parchment would read as a hole in the page.
+		button.add_theme_stylebox_override("normal", _draw_button_style(0.0))
+		button.add_theme_stylebox_override("hover", _draw_button_style(0.5))
+		button.add_theme_stylebox_override("pressed", _draw_button_style(1.0))
+		button.add_theme_stylebox_override("disabled", _draw_button_style(0.0))
+		button.add_theme_color_override("font_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_hover_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_pressed_color", ThemeColors.PENCIL)
+		button.add_theme_color_override("font_disabled_color", ThemeColors.BURNED)
 	_overlay_body.add_child(button)
 	return button

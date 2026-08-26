@@ -35,5 +35,10 @@ static func lines_owed(count: int) -> String:
 	return "%d %s %s" % [count, BOX if count == 1 else BOXES, OWED]
 
 
+## "in 1 draw" / "in 3 draws"
+static func draws(count: int) -> String:
+	return "%d %s" % [count, "draw" if count == 1 else "draws"]
+
+
 static func night(n: int) -> String:
 	return "%s %d" % [FLOOR, n]
