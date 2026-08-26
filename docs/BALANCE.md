@@ -125,3 +125,63 @@ against the Twin fun or just confusing?) are playtest questions. The loop they
 need is implemented — the Adversary announces before it rolls, the pool is
 shared, and the Twin wears your last roll — but no amount of simulation
 answers them. They need hands on the build.
+
+---
+
+## Tuning pass: the back-of-week wall and Damn Fool
+
+Measured with `tools/strategy_report.gd`, 200 runs a policy, best-known play
+(hold toward a line, stake the rail).
+
+### The wall
+
+Deaths clustered on nights 5, 6 and 7 of *every* week, peaking at night 6, with
+the Adversary holding only 1.8 lines on average. So it was never the boss: the
+threshold climbed while the card emptied, and the card lost.
+
+Two numbers moved:
+
+| | Was | Now | Why |
+|---|---|---|---|
+| `night_scaling` | 1.18 | **1.10** | night 7 is 1.77x night 1 rather than 2.70x |
+| `overflow_carry_cap` | 0.50 | **0.85** | a good night can nearly pay for the next one |
+
+The carry cap was the bigger lever by far — it is the only route by which a
+strong night buys a later one, which makes it the direct counter to a card that
+empties late in a week. It stays under 1.0 so a monster turn still cannot skip
+a night outright.
+
+| | Before | After |
+|---|---|---|
+| Mean night reached (of 35) | 13.6 | **20.7** |
+| Median night | 7 | **20** |
+| Runs won of 200 | 4 | **44** |
+
+### Damn Fool
+
+The band put a third of the dice in the dirt, and cost two thirds of a run's
+depth: it was a mistake, not a gamble. The profile was pulled back and the
+odds re-measured from the simulation (`tools/throw_tuner.tscn --hard`):
+
+| Band | pot | rail | dirt |
+|---|---|---|---|
+| Careful | 85% | 15% | 0% |
+| Chancy | 50% | 44% | 6% |
+| Damn Fool | 32% | **51%** | 17% (was 32%) |
+
+It now has the highest rail rate of the three — the widest reach on the table —
+at half the price.
+
+**It is still not competitive, and the reason is the loss duration, not the
+loss rate.** A die in the dirt is gone for the whole night, and the pool holds
+eight against five on the table, so three losses shrink every remaining turn of
+that night. One Damn Fool turn averages about 2.5 losses. Against that, the
+rail multiplier only applies to the write in front of you.
+
+Measured under best play: Careful 22.7 nights, Chancy 20.7, Damn Fool 9.2. A
+policy that gambles only when a careful throw cannot clear the night scores
+20.3 — still short of simply playing Careful.
+
+If Damn Fool should be a real choice, the change is to bound its cost: dice in
+the dirt returning at the start of the next turn rather than the next night.
+That is a rules change and is not made here.

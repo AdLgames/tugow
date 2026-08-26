@@ -10,6 +10,7 @@ extends Node
 const RUNS := 200
 const GUARD := 600
 const BEST_POLICY := "hold + stake rail"
+const TUNE_RUNS := 80
 
 
 func _ready() -> void:
@@ -22,7 +23,65 @@ func _ready() -> void:
 	_depletion()
 	_hold_experiment()
 	_write_values()
+	_tune()
 	get_tree().quit(0)
+
+
+## Deaths cluster in the back half of a week: the threshold climbs while the
+## card empties, and the card loses. This sweeps the two scalings against each
+## other to find a pair where a week is survivable but a run is not a
+## formality.
+func _tune() -> void:
+	var night_was: float = Balance.night_scaling
+	var week_was: float = Balance.week_scaling
+	print("\n=== Tuning the climb (%d runs a cell) ===" % TUNE_RUNS)
+	print("night x  week x    mean night   median   wins/%d" % TUNE_RUNS)
+	for night_scaling in [1.08, 1.10, 1.12, 1.14, 1.18]:
+		for week_scaling in [1.55, 1.75, 1.95]:
+			Balance.night_scaling = night_scaling
+			Balance.week_scaling = week_scaling
+			var floors: Array[int] = []
+			var wins := 0
+			for seed_value in TUNE_RUNS:
+				var game := _play(BEST_POLICY, seed_value)
+				floors.append(game.floor_number)
+				if game.victory:
+					wins += 1
+			floors.sort()
+			var sum := 0
+			for f in floors:
+				sum += f
+			print("  %.2f    %.2f %11.1f %8d %8d"
+				% [night_scaling, week_scaling, float(sum) / TUNE_RUNS,
+					floors[floors.size() / 2], wins])
+	Balance.night_scaling = night_was
+	Balance.week_scaling = week_was
+
+	# Overshoot is the only way a good night pays for a later one, so it is
+	# the direct counter to a card that empties late in the week.
+	var cap_was: float = Balance.overflow_carry_cap
+	print("\n=== Tuning the carry (night x1.10, week x1.55) ===")
+	print("carry cap   mean night   median   wins/%d" % TUNE_RUNS)
+	Balance.night_scaling = 1.10
+	Balance.week_scaling = 1.55
+	for cap in [0.75, 0.80, 0.85, 0.90, 0.95]:
+		Balance.overflow_carry_cap = cap
+		var floors: Array[int] = []
+		var wins := 0
+		for seed_value in TUNE_RUNS:
+			var game := _play(BEST_POLICY, seed_value)
+			floors.append(game.floor_number)
+			if game.victory:
+				wins += 1
+		floors.sort()
+		var sum := 0
+		for f in floors:
+			sum += f
+		print("  %.2f %13.1f %8d %8d"
+			% [cap, float(sum) / TUNE_RUNS, floors[floors.size() / 2], wins])
+	Balance.overflow_carry_cap = cap_was
+	Balance.night_scaling = night_was
+	Balance.week_scaling = week_was
 
 
 ## What a write is actually worth in play, as opposed to in the abstract.
@@ -234,6 +293,26 @@ func _how_runs_end() -> void:
 	for key in reasons:
 		print("  %-26s %d" % [key, reasons[key]])
 	print("  mean night reached: %.2f of %d" % [float(nights) / RUNS, Balance.total_nights()])
+	print("  deaths by night of week:")
+	var by_night := {}
+	var his_lines := 0
+	var duel_deaths := 0
+	for seed_value in RUNS:
+		var g := _play(BEST_POLICY, seed_value)
+		if g.victory:
+			continue
+		var night := Balance.night_of(g.floor_number)
+		by_night[night] = by_night.get(night, 0) + 1
+		his_lines += g.card.adversary_count()
+		if Balance.is_duel_floor(g.floor_number):
+			duel_deaths += 1
+	for night in range(1, Balance.nights_per_week + 1):
+		var n: int = by_night.get(night, 0)
+		print("    night %d%s: %s %d" % [night, " (his)" if Balance.is_duel_floor(night) else "     ",
+			"#".repeat(n / 2), n])
+	print("  died on a night he was at the table: %d of %d" % [duel_deaths, RUNS])
+	print("  lines he was holding at the end, on average: %.1f (limit %d)"
+		% [float(his_lines) / RUNS, Balance.adversary_card_limit])
 	print("  mean lines spent: %.1f over %.1f nights (%.2f lines a night)"
 		% [float(lines_spent) / RUNS, float(nights) / RUNS,
 			float(lines_spent) / maxf(1.0, float(nights))])
@@ -317,7 +396,8 @@ func _policies() -> void:
 	for policy in ["one throw, greedy", "all draws, greedy", "all draws, careful",
 			"all draws, damn fool", "stake >=5, all draws", "stake rail, all draws",
 			"clear-the-night", "hoard the big lines",
-			"hold toward a line", "hold + stake rail", "hold + clear-the-night"]:
+			"hold toward a line", "hold + stake rail", "hold + clear-the-night",
+			"hold + careful", "hold + damn fool", "hold + gamble when behind"]:
 		_report(policy)
 
 
@@ -420,6 +500,8 @@ func _shop(game: Game) -> void:
 
 func _take_turn(game: Game, policy: String) -> void:
 	var strength := _strength_for(policy)
+	if policy == "hold + gamble when behind":
+		strength = _gamble_strength(game)
 	while game.draws_left() > 0:
 		game.throw(strength)
 		_stake(game, policy)
@@ -435,10 +517,26 @@ func _take_turn(game: Game, policy: String) -> void:
 
 func _strength_for(policy: String) -> int:
 	match policy:
-		"all draws, careful":
+		"all draws, careful", "hold + careful":
 			return Throw.Strength.SOFT
-		"all draws, damn fool":
+		"all draws, damn fool", "hold + damn fool":
 			return Throw.Strength.HARD
+	return Throw.Strength.MEDIUM
+
+
+## Throw wide only when a careful throw cannot get there. The rail is the
+## only real multiplier in the game, so reaching for it is correct exactly
+## when the night cannot be cleared without one — and a mistake otherwise.
+func _gamble_strength(game: Game) -> int:
+	var need := game.threshold - game.floor_score
+	var best := 0
+	for box in game.card.open_boxes():
+		best = maxi(best, game.preview(box))
+	if best >= need:
+		return Throw.Strength.SOFT
+	# Behind, and running out of nights on this card: reach.
+	if game.card.open_count() <= Balance.nights_per_week - Balance.night_of(game.floor_number) + 2:
+		return Throw.Strength.HARD
 	return Throw.Strength.MEDIUM
 
 
@@ -488,7 +586,7 @@ func _wants_another_draw(game: Game, policy: String) -> bool:
 ## making a much bigger commitment than a Yahtzee hold.
 func _stake(game: Game, policy: String) -> void:
 	match policy:
-		"hold + stake rail", "stake rail, all draws":
+		"hold + stake rail", "stake rail, all draws", "hold + careful", "hold + damn fool", "hold + gamble when behind":
 			for d in game.pool.table:
 				if not d.locked and not d.lost and d.zone == Throw.Zone.RAIL \
 						and not game.would_lock_out(d):

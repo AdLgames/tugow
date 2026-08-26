@@ -27,20 +27,29 @@ func _ready() -> void:
 	if "--sweep" in OS.get_cmdline_user_args():
 		for impulse in [1.6, 2.4, 3.2, 4.0, 4.8, 5.6, 6.4, 7.2]:
 			await _measure(impulse, 1.4, impulse * 0.45)
+	# Damn Fool loses a third of its dice, which makes it never worth throwing.
+	# These are the candidates for a band that is a gamble rather than a
+	# mistake: still the widest reach, but survivable.
+	if "--hard" in OS.get_cmdline_user_args():
+		print("\n=== Damn Fool candidates ===")
+		for candidate in [[5.4, 1.3], [5.6, 1.4], [5.8, 1.5], [5.6, 1.6], [5.8, 1.7]]:
+			await _measure(candidate[0], 1.5, 2.4, "i%.1f s%.1f" % [candidate[0], candidate[1]],
+				candidate[1])
 	print("\n=== Committed bands ===")
 	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
 		var profile: Dictionary = Balance.throw_impulses[strength]
 		await _measure(float(profile["impulse"]), float(profile["lift"]),
-			float(profile["spin"]), Throw.strength_name(strength))
+			float(profile["spin"]), Throw.strength_name(strength), float(profile["spread"]))
 	Engine.time_scale = 1.0
 	Engine.physics_ticks_per_second = 60
 	get_tree().quit(0)
 
 
-func _measure(impulse: float, lift: float, spin: float, label: String = "") -> void:
+func _measure(impulse: float, lift: float, spin: float, label: String = "",
+		spread: float = 1.1) -> void:
 	var original: Dictionary = Balance.throw_impulses[Throw.Strength.MEDIUM].duplicate()
 	Balance.throw_impulses[Throw.Strength.MEDIUM] = {
-		"impulse": impulse, "spin": spin, "spread": 1.1, "lift": lift,
+		"impulse": impulse, "spin": spin, "spread": spread, "lift": lift,
 	}
 	var radius_total := 0.0
 	var pot := 0

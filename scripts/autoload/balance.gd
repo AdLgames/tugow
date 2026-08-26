@@ -22,7 +22,7 @@ var weeks_per_run: int = 5
 ## Threshold for the first night of the first week.
 var floor_base_threshold: int = 40
 ## Multiplier applied per night inside a week. The bar climbs all week.
-var night_scaling: float = 1.18
+var night_scaling: float = 1.10
 ## Multiplier applied to a week's opening night, week over week. A new week
 ## starts easier than the night before it ended on, but harder than the last
 ## week began — the sawtooth is the point.
@@ -33,10 +33,13 @@ var week_scaling: float = 1.55
 var chance_six_bonus: int = 10
 
 ## Scoring past a threshold banks the difference toward the next floor.
+## This is the only way a good night pays for a later one, which makes it the
+## counter to a card that empties in the back half of a week — deaths were
+## clustered on nights 5 to 7 before the cap was raised.
 var overflow_carry_ratio: float = 1.0
-## ...but never more than this fraction of the next threshold, so a monster
-## turn cannot skip a floor.
-var overflow_carry_cap: float = 0.5
+## ...but never the whole of the next threshold, so a monster turn cannot skip
+## a night outright.
+var overflow_carry_cap: float = 0.85
 
 # --- The throw ---------------------------------------------------------------
 
@@ -57,9 +60,9 @@ var rail_mode: RailMode = RailMode.LINEAR
 ## gets. Re-run the tuner and update this table after any change to the dice,
 ## the table or the throw profiles.
 var zone_odds: Dictionary = {
-	0: {"pot": 0.83, "rail": 0.17, "lost": 0.00},   # SOFT
+	0: {"pot": 0.85, "rail": 0.15, "lost": 0.00},   # SOFT
 	1: {"pot": 0.50, "rail": 0.44, "lost": 0.06},   # MEDIUM
-	2: {"pot": 0.22, "rail": 0.47, "lost": 0.31},   # HARD
+	2: {"pot": 0.32, "rail": 0.51, "lost": 0.17},   # HARD
 }
 
 ## How often a settled die is left showing two faces at once, measured the
@@ -92,7 +95,12 @@ var max_collision_chain: int = 12
 var throw_impulses: Dictionary = {
 	0: {"impulse": 3.4, "spin": 0.9, "spread": 0.5, "lift": 0.6},    # SOFT
 	1: {"impulse": 5.2, "spin": 1.8, "spread": 1.1, "lift": 1.0},    # MEDIUM
-	2: {"impulse": 6.2, "spin": 2.8, "spread": 1.9, "lift": 1.5},    # HARD
+	# Damn Fool put a third of the dice in the dirt, which made it a mistake
+	# rather than a gamble: measured over whole runs it cost two thirds of a
+	# run's depth and was never the right call. Pulled back until it is the
+	# widest reach on the table — the highest rail rate of the three bands —
+	# at a survivable price.
+	2: {"impulse": 5.6, "spin": 2.4, "spread": 1.6, "lift": 1.5},    # HARD
 }
 
 ## Physics drives the visible throw; the model in throw.gd stays the headless
