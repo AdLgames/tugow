@@ -40,5 +40,20 @@ static func draws(count: int) -> String:
 	return "%d %s" % [count, "draw" if count == 1 else "draws"]
 
 
+## Nights are numbered inside their week, because that is the unit the
+## player is budgeting against: "Night 3" of seven, not night 17 of 35.
 static func night(n: int) -> String:
-	return "%s %d" % [FLOOR, n]
+	return "%s %d" % [FLOOR, Balance.night_of(n)]
+
+
+## Where the run is, in full: "Week 2 · Night 3".
+static func week_and_night(n: int) -> String:
+	return "Week %d · %s %d" % [Balance.week_of(n), FLOOR, Balance.night_of(n)]
+
+
+## "3 nights left this week" — the real budget line.
+static func nights_left(n: int) -> String:
+	var left := Balance.nights_per_week - Balance.night_of(n)
+	if left == 0:
+		return "last night of the week"
+	return "%d %s left this week" % [left, "night" if left == 1 else "nights"]

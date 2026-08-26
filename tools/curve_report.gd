@@ -66,20 +66,20 @@ func _turn_value() -> void:
 
 
 func _floor_ladder() -> void:
-	print("\n=== Floor thresholds (base %d, x%.2f per floor) ===" % [Balance.floor_base_threshold, Balance.floor_scaling])
-	for n in range(1, Game.TOTAL_FLOORS + 1):
+	print("\n=== Night thresholds (base %d, x%.2f a night, x%.2f a week) ===" % [Balance.floor_base_threshold, Balance.night_scaling, Balance.week_scaling])
+	for n in range(1, Game.total_nights() + 1):
 		var tag := "  duel" if Balance.is_duel_floor(n) else ""
-		print("  floor %2d: %7d%s" % [n, Balance.threshold_for_floor(n), tag])
+		print("  week %d night %d: %7d%s" % [Balance.week_of(n), Balance.night_of(n), Balance.threshold_for_floor(n), tag])
 
 
 func _depth_sweep() -> void:
 	print("\n=== Greedy bot depth ===")
 	var original_curve: int = Balance.curve
-	var original_scaling: float = Balance.floor_scaling
+	var original_scaling: float = Balance.week_scaling
 	for curve in [Balance.ScoreCurve.RAW, Balance.ScoreCurve.TEMPERED]:
 		Balance.curve = curve
 		for scaling in [1.4, 1.5, 1.6]:
-			Balance.floor_scaling = scaling
+			Balance.week_scaling = scaling
 			var depths: Array[int] = []
 			for seed_value in range(1, RUNS + 1):
 				depths.append(_play(seed_value))
@@ -91,7 +91,7 @@ func _depth_sweep() -> void:
 				% ["RAW" if curve == Balance.ScoreCurve.RAW else "TEMPERED",
 					scaling, float(sum) / depths.size(), depths[depths.size() / 2], depths[depths.size() - 1]])
 	Balance.curve = original_curve
-	Balance.floor_scaling = original_scaling
+	Balance.week_scaling = original_scaling
 
 
 ## Open question #7: rail doubling on top of exponential categories.
@@ -123,7 +123,7 @@ func _rail_sweep() -> void:
 		var name: String = ["EXPONENTIAL", "LINEAR", "FLAT"][mode]
 		print("  %-12s  mean floor %.2f  best %d  (threshold at floor 12: %d)"
 			% [name, float(sum) / RUNS, best,
-				Balance.threshold_for_floor(12)])
+				Balance.threshold_for_floor(Balance.total_nights())])
 	Balance.rail_mode = original
 
 
@@ -154,7 +154,7 @@ func _reclaim_sweep() -> void:
 		for seed_value in range(1, RUNS + 1):
 			var depth := _play(seed_value)
 			sum += depth
-			if depth > Game.TOTAL_FLOORS:
+			if depth > Game.total_nights():
 				wins += 1
 		print("  reclaim=%d  mean floor %.2f  full clears %d/%d" % [reclaim, float(sum) / RUNS, wins, RUNS])
 	Balance.duel_reclaim = original

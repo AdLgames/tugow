@@ -7,6 +7,7 @@ signal log_emitted(line: String)
 signal state_changed()
 signal floor_started(floor_number: int, threshold: int)
 signal floor_cleared(floor_number: int, reclaimed: Array)
+signal week_started(week_number: int, reopened: Array)
 signal run_ended(victory: bool, reason: String)
 signal player_wrote(box: int, value: int, denied: bool)
 signal thrown(result: Throw.Result)
@@ -20,7 +21,9 @@ signal adversary_acted(line: String)
 
 enum Phase { FLOOR_START, TURN, BENCH, RUN_OVER }
 
-const TOTAL_FLOORS := 12
+## Nights in a run. A run is weeks, and a week is nights; this is the product.
+static func total_nights() -> int:
+	return Balance.total_nights()
 
 var card: Scorecard
 var pool: DicePool
@@ -53,7 +56,9 @@ var last_player_values: Array = []
 var pending_carry: int = 0
 var floor_carry_in: int = 0
 ## Charms taken since this night began.
-var charms_taken_tonight: int = 0
+var charms_taken_this_week: int = 0
+## Which week the run is in, and whether this night ends one.
+var week_number: int = 0
 var log_lines: Array[String] = []
 
 
@@ -65,20 +70,29 @@ func start_run(seed_value: int = 0) -> void:
 	victory = false
 	end_reason = ""
 	log_lines.clear()
-	charms_taken_tonight = 0
+	charms_taken_this_week = 0
+	week_number = 0
 	pending_carry = 0
 	floor_carry_in = 0
-	log_line("Thirteen lines. Settle them carefully.")
+	log_line("Thirteen lines, seven nights. Settle them carefully.")
 	next_floor()
 
 
 func next_floor() -> void:
 	floor_number += 1
-	if floor_number > TOTAL_FLOORS:
+	if floor_number > total_nights():
 		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
 		return
+	# A new week means fresh paper and a charm for the one you survived. The
+	# wipe happens here rather than at the end of the last night so the
+	# Ledger you finished a week on is still readable while the night closes.
+	var week := Balance.week_of(floor_number)
+	if week != week_number:
+		week_number = week
+		charms_taken_this_week = 0
+		if floor_number > 1:
+			_begin_week()
 	threshold = Balance.threshold_for_floor(floor_number)
-	charms_taken_tonight = 0
 	floor_carry_in = pending_carry
 	floor_score = pending_carry
 	pending_carry = 0
@@ -382,7 +396,7 @@ func _clear_floor() -> void:
 		# The night is over; nothing is on call any more.
 		adversary.declared_box = -1
 	_bank_overflow()
-	if floor_number >= TOTAL_FLOORS:
+	if floor_number >= total_nights():
 		floor_cleared.emit(floor_number, reclaimed)
 		_end_run(true, "Twelve nights down with %s." % Lore.lines_owed(card.open_count()))
 		return
@@ -406,6 +420,20 @@ func _bank_overflow() -> void:
 	log_line("Overshot by %d. %d carries to %s." % [overflow, pending_carry, Lore.night(floor_number + 1).to_lower()])
 
 
+## Turning the page. Thirteen lines have to carry seven nights, so the wipe is
+## the reward for surviving one — every line the Adversary took or burned
+## comes back with it.
+func _begin_week() -> void:
+	var wiped := card.new_week()
+	log_line("--- Week %d. Fresh paper: %d lines back. ---" % [week_number, wiped.size()])
+	week_started.emit(week_number, wiped)
+
+
+## Nights left in the current week, including tonight.
+func nights_left_in_week() -> int:
+	return Balance.nights_per_week - Balance.night_of(floor_number) + 1
+
+
 func leave_bench() -> void:
 	if phase != Phase.BENCH:
 		return
@@ -414,7 +442,7 @@ func leave_bench() -> void:
 
 func take_charm(charm: Charm) -> void:
 	charms.append(charm)
-	charms_taken_tonight += 1
+	charms_taken_this_week += 1
 	log_line("Charm taken: %s — %s" % [charm.charm_name, charm.text])
 	state_changed.emit()
 

@@ -9,14 +9,24 @@ enum ScoreCurve { RAW, TEMPERED }
 
 var curve: ScoreCurve = ScoreCurve.TEMPERED
 
-# --- Floors -----------------------------------------------------------------
+# --- Weeks and nights --------------------------------------------------------
+#
+# A run is a handful of weeks, and a week is seven nights. The Ledger is
+# wiped clean at the end of each week, which is what makes a week the real
+# unit of play: thirteen lines have to carry you seven nights, not a whole
+# run. Everything you scored is kept; only the paper is fresh.
 
-## Threshold for floor 1.
-var floor_base_threshold: int = 60
-## Multiplier applied per floor descended. The doc's starting guess is 1.6x.
-var floor_scaling: float = 1.45
-## Floors that host an Adversary instead of a plain threshold.
-var duel_floors: PackedInt32Array = [3, 5, 7, 9, 10, 11, 12]
+var nights_per_week: int = 7
+var weeks_per_run: int = 5
+
+## Threshold for the first night of the first week.
+var floor_base_threshold: int = 40
+## Multiplier applied per night inside a week. The bar climbs all week.
+var night_scaling: float = 1.18
+## Multiplier applied to a week's opening night, week over week. A new week
+## starts easier than the night before it ended on, but harder than the last
+## week began — the sawtooth is the point.
+var week_scaling: float = 1.55
 
 ## Chance adds this per 6 shown. Doubling per 6 made a mediocre roll clear an
 ## early floor on its own — see docs/BALANCE.md.
@@ -107,10 +117,10 @@ var duel_reclaim: int = 3
 
 # --- Bench ------------------------------------------------------------------
 
-## Charms a night. The bench is visited once per night, so this is also the
-## cap per visit — without it a night with lines to spare could buy out half
-## the library at once.
-var charms_per_night: int = 1
+## Charms a week, awarded for surviving one. The bench is open every night,
+## but a charm is what a finished week pays out — so charms mark weeks, and
+## a run is as many charms as it is weeks.
+var charms_per_week: int = 1
 
 var bench_costs: Dictionary = {
 	"reshape_face": 1,
@@ -121,9 +131,47 @@ var bench_costs: Dictionary = {
 }
 
 
+## Nights are numbered straight through the run; week and night-of-week are
+## derived so nothing has to keep two counters in step.
+func total_nights() -> int:
+	return weeks_per_run * nights_per_week
+
+
+func week_of(n: int) -> int:
+	return (n - 1) / nights_per_week + 1
+
+
+func night_of(n: int) -> int:
+	return (n - 1) % nights_per_week + 1
+
+
+## The last night of a week is the hardest night of that week; the first
+## night of the next week drops back down, but not as far as the last week
+## started.
 func threshold_for_floor(n: int) -> int:
-	return int(round(floor_base_threshold * pow(floor_scaling, float(n - 1))))
+	var week := week_of(n)
+	var night := night_of(n)
+	return int(round(floor_base_threshold
+		* pow(week_scaling, float(week - 1))
+		* pow(night_scaling, float(night - 1))))
+
+
+## He arrives later in the week early on, and earlier in the week as the run
+## goes: week 1 he sits down only on the last night, week 5 for most of it.
+## Difficulty comes from how much of the week he is at the table, not only
+## from the numbers on the card.
+func duel_nights_in_week(week: int) -> int:
+	return clampi(week, 1, nights_per_week)
 
 
 func is_duel_floor(n: int) -> bool:
-	return duel_floors.has(n)
+	return night_of(n) > nights_per_week - duel_nights_in_week(week_of(n))
+
+
+## Every night of the run that hosts an Adversary.
+func duel_floors() -> Array[int]:
+	var out: Array[int] = []
+	for n in range(1, total_nights() + 1):
+		if is_duel_floor(n):
+			out.append(n)
+	return out

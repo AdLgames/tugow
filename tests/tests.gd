@@ -20,6 +20,8 @@ func _ready() -> void:
 	_test_charm_limit()
 	_test_denial()
 	_test_floor_transition()
+	_test_weekly_reset()
+	_test_duel_cadence()
 	_test_overflow_carry()
 	_test_lock_out_guard()
 	_test_free_dice_excludes_lost()
@@ -234,9 +236,14 @@ func _test_charm_limit() -> void:
 	for offer in Bench.offers(game):
 		offered_ids.append(offer["id"])
 	check(not offered_ids.has(&"take_charm"), "the charm is off the board once taken")
+	# Charms are what a finished week pays out, so the next night inside the
+	# same week offers nothing more.
 	game.next_floor()
-	check(Bench.next_charm(game) != null, "the next night offers another")
-	check(game.charms_taken_tonight == 0, "the count resets with the night")
+	check(Bench.next_charm(game) == null, "the next night of the same week offers no charm")
+	while Balance.week_of(game.floor_number) == 1:
+		game.next_floor()
+	check(Bench.next_charm(game) != null, "a new week offers another")
+	check(game.charms_taken_this_week == 0, "the count resets with the week")
 
 
 func _test_adversaries() -> void:
@@ -312,16 +319,76 @@ func _test_floor_transition() -> void:
 	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
 
 
+## A week is the unit of play: thirteen lines have to carry seven nights, and
+## surviving one hands the paper back.
+func _test_weekly_reset() -> void:
+	var game := Game.new()
+	game.start_run(4477)
+	check(Balance.week_of(1) == 1 and Balance.night_of(1) == 1, "the run opens on week 1 night 1")
+	check(Balance.week_of(Balance.nights_per_week + 1) == 2,
+		"the night after a full week starts the next one")
+
+	game.card.write_player(Scoring.Box.ACES, 12)
+	game.card.write_adversary(Scoring.Box.TWOS, 8)
+	game.card.burn(Scoring.Box.THREES)
+	var banked := game.card.run_total
+	check(game.card.open_count() == Scoring.BOX_COUNT - 3, "three lines are gone")
+
+	var wiped := game.card.new_week()
+	check(wiped.size() == 3, "every spent line comes back, his and burned alike")
+	check(game.card.open_count() == Scoring.BOX_COUNT, "the card is whole again")
+	check(game.card.run_total == banked, "what was scored is kept")
+	check(game.card.spend_order.is_empty(), "and nothing is still marked spent")
+
+	# The run total still reconciles: nothing is stranded by the wipe.
+	var owed := 0
+	for box in game.card.player_boxes():
+		owed += game.card.points[box]
+	check(owed + game.card.reclaimed_total == game.card.run_total,
+		"the total reconciles across the wipe")
+
+	# Playing through a whole week hands the paper back on its own.
+	var fresh := Game.new()
+	fresh.start_run(4478)
+	while Balance.week_of(fresh.floor_number) == 1 and fresh.phase != Game.Phase.RUN_OVER:
+		fresh.card.write_player(fresh.card.open_boxes()[0], 5)
+		if fresh.phase == Game.Phase.BENCH:
+			fresh.leave_bench()
+		else:
+			fresh.next_floor()
+	check(fresh.phase == Game.Phase.RUN_OVER or fresh.card.open_count() == Scoring.BOX_COUNT,
+		"crossing into a new week wipes the card without being asked")
+
+
+## He arrives later in the week early on, and earlier as the run goes.
+func _test_duel_cadence() -> void:
+	var counts: Array[int] = []
+	for week in range(1, Balance.weeks_per_run + 1):
+		var n := 0
+		for night in range(1, Balance.nights_per_week + 1):
+			if Balance.is_duel_floor((week - 1) * Balance.nights_per_week + night):
+				n += 1
+		counts.append(n)
+	check(counts[0] == 1, "week 1 has him on one night")
+	for i in range(1, counts.size()):
+		check(counts[i] > counts[i - 1], "each week puts him at the table more often")
+	check(Balance.is_duel_floor(Balance.nights_per_week),
+		"the last night of a week is always his")
+
+
 ## Overshoot carries instead of evaporating.
 func _test_overflow_carry() -> void:
 	var game := Game.new()
 	game.start_run(21)
 	var next_threshold := Balance.threshold_for_floor(2)
-	game.floor_score = game.threshold + 40
+	# Under the cap, so the whole overshoot carries.
+	var overshoot := int(next_threshold * Balance.overflow_carry_cap) - 1
+	game.floor_score = game.threshold + overshoot
 	game._bank_overflow()
-	check(game.pending_carry == 40, "the overshoot banks")
+	check(game.pending_carry == overshoot, "the overshoot banks")
 	game.leave_bench() if game.phase == Game.Phase.BENCH else game.next_floor()
-	check(game.floor_carry_in == 40 and game.floor_score == 40, "it opens the next floor")
+	check(game.floor_carry_in == overshoot and game.floor_score == overshoot,
+		"it opens the next floor")
 	check(game.pending_carry == 0, "and is spent once")
 
 	# A monster turn cannot skip a floor outright.

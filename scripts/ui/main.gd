@@ -226,7 +226,7 @@ func _build_lip_strip() -> void:
 	brand.add_child(title)
 	strip.add_child(brand)
 
-	_night_label = _stat(strip, Lore.night(1))
+	_night_label = _stat(strip, Lore.week_and_night(1))
 	_score_label = _stat(strip, "0 / 0")
 	_meter = ProgressBar.new()
 	_meter.custom_minimum_size = Vector2(220, 16)
@@ -626,7 +626,7 @@ func _on_box_pressed(box: int) -> void:
 func _refresh() -> void:
 	if game == null:
 		return
-	_night_label.text = Lore.night(game.floor_number)
+	_night_label.text = Lore.week_and_night(game.floor_number)
 	_score_label.text = "%d / %d" % [game.floor_score, game.threshold]
 	if game.floor_carry_in > 0:
 		_score_label.text += "  (%d carried)" % game.floor_carry_in
@@ -813,7 +813,7 @@ func _refresh_adversary() -> void:
 
 
 func _next_duel_floor() -> int:
-	for n in range(game.floor_number + 1, Game.TOTAL_FLOORS + 1):
+	for n in range(game.floor_number + 1, Game.total_nights() + 1):
 		if Balance.is_duel_floor(n):
 			return n
 	return -1

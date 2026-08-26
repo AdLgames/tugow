@@ -18,7 +18,167 @@ func _ready() -> void:
 	_lever_isolation()
 	_reroll_question()
 	_how_runs_end()
+	_depletion()
+	_hold_experiment()
 	get_tree().quit(0)
+
+
+## What would a per-turn hold be worth? Today a redraw rerolls every die, so
+## a hand can never be built toward a line — which is why the exotic lines
+## are almost always a scratch. This simulates the same three draws with the
+## player keeping dice toward a target, and re-measures what a line is worth.
+## Nothing in the rules is changed; this is a measurement of a proposal.
+func _hold_experiment() -> void:
+	print("\n=== What a line would be worth with a per-turn hold ===")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	print("lines left   mean best write   median   (today's mean, for comparison)")
+	var today := [74, 36, 23, 12, 4, 1, 0, 0, 0, 0, 0, 0, 0]
+	for spent in range(0, Scoring.BOX_COUNT):
+		var scores: Array[int] = []
+		var samples := 3000
+		for _i in samples:
+			scores.append(_hold_turn(rng, spent))
+		scores.sort()
+		var sum := 0
+		for v in scores:
+			sum += v
+		print("  %2d %14d %8d   (%d)"
+			% [Scoring.BOX_COUNT - spent, sum / samples, scores[samples / 2], today[spent]])
+
+
+## One turn with three draws, keeping the dice that serve the best target
+## among the lines still open.
+func _hold_turn(rng: RandomNumberGenerator, spent: int) -> int:
+	var values: Array = []
+	for _d in Balance.dice_per_roll:
+		values.append(rng.randi_range(1, 6))
+	# The lines a greedy player would already have spent are the ones that
+	# score best on a typical hand, so what is left is the tail.
+	var ranked := Scoring.all_boxes()
+	ranked.sort_custom(func(a, b): return Scoring.score(a, values) > Scoring.score(b, values))
+	var open_boxes: Array[int] = []
+	for i in range(spent, ranked.size()):
+		open_boxes.append(ranked[i])
+	if open_boxes.is_empty():
+		return 0
+	for _draw in Balance.rerolls_per_turn:
+		var target := _best_target(open_boxes, values)
+		var keep := _keep_for(target, values)
+		for i in values.size():
+			if not keep[i]:
+				values[i] = rng.randi_range(1, 6)
+	var best := 0
+	for box in open_boxes:
+		best = maxi(best, Scoring.score(box, values))
+	return best
+
+
+## Which open line this hand is closest to being worth something on.
+func _best_target(open_boxes: Array[int], values: Array) -> int:
+	var best: int = open_boxes[0]
+	var best_score := -1
+	for box in open_boxes:
+		# Judge a target by what it would pay if the kept dice repeated,
+		# not by what the hand scores right now.
+		var keep := _keep_for(box, values)
+		var kept: Array = []
+		for i in values.size():
+			if keep[i]:
+				kept.append(values[i])
+		while kept.size() < values.size():
+			kept.append(kept[0] if not kept.is_empty() else 1)
+		var s := Scoring.score(box, kept)
+		if s > best_score:
+			best_score = s
+			best = box
+	return best
+
+
+func _keep_for(box: int, values: Array) -> Array[bool]:
+	var keep: Array[bool] = []
+	for i in values.size():
+		keep.append(false)
+	match box:
+		Scoring.Box.ACES, Scoring.Box.TWOS, Scoring.Box.THREES, \
+		Scoring.Box.FOURS, Scoring.Box.FIVES, Scoring.Box.SIXES:
+			var face := box + 1
+			for i in values.size():
+				keep[i] = values[i] == face
+		Scoring.Box.THREE_KIND, Scoring.Box.FOUR_KIND, Scoring.Box.YAHTZEE, \
+		Scoring.Box.FULL_HOUSE:
+			var modal := _modal(values)
+			for i in values.size():
+				keep[i] = values[i] == modal
+		Scoring.Box.SMALL_STRAIGHT, Scoring.Box.LARGE_STRAIGHT:
+			var seen := {}
+			for i in values.size():
+				if not seen.has(values[i]):
+					seen[values[i]] = true
+					keep[i] = true
+		Scoring.Box.CHANCE:
+			for i in values.size():
+				keep[i] = values[i] >= 5
+	return keep
+
+
+func _modal(values: Array) -> int:
+	var counts := {}
+	for v in values:
+		counts[v] = counts.get(v, 0) + 1
+	var best := 0
+	var best_count := 0
+	for face in counts:
+		if counts[face] > best_count or (counts[face] == best_count and int(face) > best):
+			best = int(face)
+			best_count = counts[face]
+	return best
+
+
+## The heart of a week: as lines are spent the card gets worse, while the
+## threshold climbs. If those two curves cross, the back half of a week is
+## unplayable no matter how well it is played.
+func _depletion() -> void:
+	print("\n=== What a line is worth as the card empties ===")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 23
+	print("lines left   mean best write   median   p(>= that night's bar)")
+	for spent in range(0, Scoring.BOX_COUNT):
+		var left := Scoring.BOX_COUNT - spent
+		# Spending greedily takes the best lines first, so what is left is
+		# the tail. Model that by removing the boxes a greedy player would
+		# have used on average: the high-scoring ones.
+		var open_boxes: Array[int] = []
+		for box in Scoring.all_boxes():
+			open_boxes.append(box)
+		var scores: Array[int] = []
+		var samples := 4000
+		for _i in samples:
+			var values: Array = []
+			for _d in Balance.dice_per_roll:
+				values.append(rng.randi_range(1, 6))
+			# Drop the `spent` boxes that scored best on a typical hand.
+			var ranked := open_boxes.duplicate()
+			ranked.sort_custom(func(a, b): return Scoring.score(a, values) > Scoring.score(b, values))
+			var best := 0
+			if spent < ranked.size():
+				best = Scoring.score(ranked[spent], values)
+			scores.append(best)
+		scores.sort()
+		var sum := 0
+		for v in scores:
+			sum += v
+		# The night you would be on if you spent this many lines at the
+		# budgeted rate of 13 lines across 7 nights.
+		var night := mini(Balance.nights_per_week, spent * Balance.nights_per_week / Scoring.BOX_COUNT + 1)
+		var bar := Balance.threshold_for_floor(night)
+		var over := 0
+		for v in scores:
+			if v >= bar:
+				over += 1
+		print("  %2d %14d %8d   night %d bar %4d -> %5.1f%%"
+			% [left, sum / samples, scores[samples / 2], night, bar,
+				100.0 * float(over) / float(samples)])
 
 
 ## Which constraint actually kills a run: the Ledger running out of lines, or
@@ -42,8 +202,11 @@ func _how_runs_end() -> void:
 	print("  mean lines spent: %.1f over %.1f nights (%.2f lines a night)"
 		% [float(lines_spent) / RUNS, float(nights) / RUNS,
 			float(lines_spent) / maxf(1.0, float(nights))])
+	var demand := 0
+	for n in range(1, Game.total_nights() + 1):
+		demand += Balance.threshold_for_floor(n)
 	print("  points a line needs to average to finish: %d"
-		% (11384 / maxi(1, Scoring.BOX_COUNT + Balance.duel_floors.size() * Balance.duel_reclaim)))
+		% (demand / maxi(1, Scoring.BOX_COUNT * Balance.weeks_per_run)))
 
 
 ## What is one turn actually worth, against what each night demands? If the
@@ -71,7 +234,7 @@ func _turn_ceiling() -> void:
 		% [mean / samples, best_scores[samples / 2], best_scores[int(samples * 0.9)],
 			best_scores[int(samples * 0.99)], best_scores[samples - 1]])
 	print("night  threshold  p(one fresh roll clears it, any line)")
-	for n in range(1, Game.TOTAL_FLOORS + 1):
+	for n in range(1, Game.total_nights() + 1):
 		var t := Balance.threshold_for_floor(n)
 		var over := 0
 		for v in best_scores:
@@ -93,16 +256,19 @@ func _reroll_question() -> void:
 func _budget() -> void:
 	print("\n=== The line budget ===")
 	var total := Scoring.BOX_COUNT
-	var duels: int = Balance.duel_floors.size()
-	print("lines on the Ledger: %d" % total)
-	print("nights to survive:   %d" % Game.TOTAL_FLOORS)
+	var duels: int = Balance.duel_floors().size()
+	print("lines on the Ledger: %d, wiped clean every week" % total)
+	print("weeks in a run:      %d of %d nights" % [Balance.weeks_per_run, Balance.nights_per_week])
+	print("lines available:     %d over the run (%d a week)"
+		% [total * Balance.weeks_per_run, total])
+	print("nights to survive:   %d" % Game.total_nights())
 	print("duel nights:         %d (each can reclaim %d) -> ceiling %d lines"
 		% [duels, Balance.duel_reclaim, total + duels * Balance.duel_reclaim])
 	var sum := 0
-	for n in range(1, Game.TOTAL_FLOORS + 1):
+	for n in range(1, Game.total_nights() + 1):
 		sum += Balance.threshold_for_floor(n)
 	print("total points demanded across 12 nights: %d" % sum)
-	print("night 12 alone demands: %d" % Balance.threshold_for_floor(Game.TOTAL_FLOORS))
+	print("the last night alone demands: %d" % Balance.threshold_for_floor(Game.total_nights()))
 	print("best single write in the game (yahtzee of sixes): %d"
 		% Scoring.score(Scoring.Box.YAHTZEE, [6, 6, 6, 6, 6]))
 	print("  ...on a full rail (x%d): %d"
