@@ -126,6 +126,16 @@ func _dress_bodies() -> void:
 		body.add_child(mesh)
 
 
+## Take every die off the table. A turn begins with nothing on the felt.
+func clear_table() -> void:
+	sim.spawn(0)
+
+
+## Leave only the staked dice on the felt, resting on their sealed faces.
+func show_held(held: Array) -> void:
+	sim.show_held(held)
+
+
 func is_throwing() -> bool:
 	return _throwing
 

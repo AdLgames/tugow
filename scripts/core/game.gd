@@ -12,6 +12,8 @@ signal player_wrote(box: int, value: int, denied: bool)
 signal thrown(result: Throw.Result)
 ## Emitted the moment the dice leave the hand, before they land.
 signal throw_began(strength: int)
+## A fresh turn, with nothing on the table yet.
+signal turn_started()
 signal dice_lost(dice: Array)
 signal adversary_declared(box: int)
 signal adversary_acted(line: String)
@@ -107,7 +109,23 @@ func begin_turn() -> void:
 	rerolls_left = Balance.rerolls_per_turn
 	turn_rolled = false
 	pool.begin_turn("player")
-	throw()
+	# The felt starts bare. Nothing is on it and nothing can be settled until
+	# you have thrown — the first draw of the turn is yours to make. Staked
+	# dice are the exception: they were sealed for the night and keep the face
+	# they were sealed on.
+	for die in pool.table:
+		if die.locked:
+			continue
+		die.value = 0
+		die.second_value = 0
+		die.zone = Throw.Zone.POT
+	# With every die staked there is nothing left to throw, so the faces on
+	# the felt are already the hand. Count the turn as drawn or the night
+	# deadlocks with no legal move.
+	if not can_throw():
+		turn_rolled = true
+	turn_started.emit()
+	state_changed.emit()
 
 
 ## Throw strength is the main risk dial: soft never reaches the rail, hard
@@ -137,7 +155,7 @@ func throw(strength: int = -1) -> void:
 		dice_in_the_air = true
 		state_changed.emit()
 		stage.begin_throw(throw_strength, _throw_seeds.randi(),
-			_staked_dice(), _thrown_ids())
+			staked_dice(), _thrown_ids())
 		return
 	last_throw = pool.throw_table(throw_strength, has_charm(&"long_throw"))
 	_finish_throw(pushed)
@@ -154,7 +172,7 @@ func _thrown_ids() -> Array:
 
 
 ## Staked dice are not thrown: the stage sets them down showing their face.
-func _staked_dice() -> Array:
+func staked_dice() -> Array:
 	var held: Array = []
 	for die in pool.table:
 		if die.locked and not die.lost:
@@ -218,6 +236,11 @@ func roll() -> void:
 
 
 ## Every die on the table is locked or gone: there is nothing to throw.
+## Draws left this turn, including the first one if it has not been made.
+func draws_left() -> int:
+	return rerolls_left + (0 if turn_rolled else 1)
+
+
 func can_throw() -> bool:
 	for d in pool.table:
 		if not d.locked and not d.lost:
@@ -253,6 +276,8 @@ func would_lock_out(die: Die) -> bool:
 
 
 func preview(box: int) -> int:
+	if not turn_rolled:
+		return 0
 	var values := table_values()
 	var base := int(round(Scoring.score(box, values) * Throw.rail_multiplier(pool.table)))
 	for c in charms:
@@ -272,6 +297,9 @@ func table_values() -> Array:
 ## Write into a box. This is the turn: one roll, one box, gone for the run.
 func write_box(box: int) -> void:
 	if phase != Phase.TURN or not card.is_open(box):
+		return
+	# You settle a line against dice. Before the first throw there are none.
+	if not turn_rolled:
 		return
 	var values := table_values()
 	var value := preview(box)

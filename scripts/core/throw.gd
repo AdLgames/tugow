@@ -116,6 +116,15 @@ static func zone_for_radius(radius: float) -> int:
 	return ThrowContract.zone_for_radius(radius)
 
 
+## How many of these dice are sealed for the night.
+static func staked_count(dice: Array[Die]) -> int:
+	var n := 0
+	for d in dice:
+		if d.locked and not d.lost:
+			n += 1
+	return n
+
+
 ## How many of these dice took the rail double.
 static func rail_count(dice: Array[Die]) -> int:
 	var n := 0

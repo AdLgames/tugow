@@ -66,6 +66,9 @@ func _draw_slip(font: Font, at: Vector2, die: Die, index: int) -> void:
 
 
 func _state_of(die: Die) -> Array:
+	# Before the first throw a die is not anywhere on the table yet.
+	if die.value <= 0 and not die.lost:
+		return ["in the cup", Color(0.10, 0.08, 0.13, 0.40)]
 	if die.lost:
 		return ["in the dirt", ThemeColors.ADVERSARY]
 	if die.locked:

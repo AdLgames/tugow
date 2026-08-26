@@ -251,7 +251,8 @@ func _draw_value(box: int, font: Font, baseline: float, top: float,
 ## Nothing here is written yet: ghosted pencil, out in the margin, and a zero
 ## barely there at all — six zeros in the score column read as real entries.
 func _draw_preview(box: int, font: Font, baseline: float, best: int) -> void:
-	if game.phase != Game.Phase.TURN:
+	if game.phase != Game.Phase.TURN or not game.turn_rolled:
+		# Nothing has been thrown, so there is nothing a line would score.
 		return
 	var value := game.preview(box)
 	var text := str(value) if value > 0 else "—"

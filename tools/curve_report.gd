@@ -169,6 +169,9 @@ func _play(seed_value: int) -> int:
 		if game.phase == Game.Phase.BENCH:
 			game.leave_bench()
 			continue
+		# The table starts empty each turn: throw before reading it.
+		if not game.turn_rolled:
+			game.throw()
 		for d in game.pool.table:
 			if d.value >= 5:
 				game.lock_die(d)

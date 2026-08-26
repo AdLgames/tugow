@@ -95,6 +95,22 @@ func spawn(count: int, ids: Array = []) -> void:
 		bodies.append(body)
 
 
+## Set staked dice down on the felt without throwing anything. Between turns
+## the only dice on the table are the ones sealed for the night, and they must
+## still be there to look at — and to score from.
+func show_held(held: Array) -> void:
+	var ids: Array = []
+	for entry in held:
+		ids.append(int(entry["id"]))
+	spawn(ids.size(), ids)
+	for i in bodies.size():
+		var entry: Dictionary = held[i]
+		var spot: Vector2 = entry["position"]
+		bodies[i].cocked_on = -1
+		bodies[i].rest_at(Vector3(spot.x * LIP_RADIUS, DIE_SIZE * 0.5, spot.y * LIP_RADIUS),
+			int(entry["value"]))
+
+
 ## Throw `dice` at the given strength. Same seed and same strength produce the
 ## same result: the impulses come from a seeded generator and the physics tick
 ## is fixed, so nothing here is tied to frame rate — D2.

@@ -144,6 +144,7 @@ func _test_dice_behaviour() -> void:
 func _test_locking_narrows_the_table() -> void:
 	var game := Game.new()
 	game.start_run(1234)
+	game.throw()
 	var first_size := game.pool.table.size()
 	check(first_size == Balance.dice_per_roll, "you roll five dice")
 	game.lock_die(game.pool.table[0])
@@ -280,6 +281,7 @@ func _test_denial() -> void:
 	game.start_run(555)
 	game.adversary = AdversaryRoster.Taxman.new()
 	game.adversary.on_duel_start(game)
+	game.throw()
 	var target := game.adversary.declare(game)
 	var denials: Array = []
 	game.player_wrote.connect(func(box, _value, denied): denials.append([box, denied]))
@@ -295,6 +297,7 @@ func _test_floor_transition() -> void:
 	# Captured through an array: GDScript lambdas copy plain locals.
 	var phase_at_signal: Array[int] = []
 	game.floor_cleared.connect(func(_n, _r): phase_at_signal.append(game.phase))
+	game.throw()
 	game.floor_score = game.threshold
 	game.write_box(Scoring.Box.CHANCE)
 	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.BENCH,
@@ -358,6 +361,7 @@ func _test_free_dice_excludes_lost() -> void:
 func _test_lock_out_guard() -> void:
 	var game := Game.new()
 	game.start_run(31)
+	game.throw()
 	check(game.free_dice_on_table() == Balance.dice_per_roll, "five free dice to start")
 	while game.free_dice_on_table() > 1:
 		for d in game.pool.table:
@@ -565,6 +569,7 @@ func _test_rail_multiplier() -> void:
 func _test_lost_dice_are_floor_long() -> void:
 	var game := Game.new()
 	game.start_run(808)
+	game.throw()
 	# Pick a die that is actually on the table with a face on it: the opening
 	# throw can already have put one in the dirt, and a die that was never
 	# worth anything cannot demonstrate that losing it costs you something.

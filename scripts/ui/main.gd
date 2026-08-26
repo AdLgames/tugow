@@ -357,15 +357,15 @@ func _show_title() -> void:
 
 
 func _start_run() -> void:
-	game = RunState.new_run()
+	game = RunState.new_run(0, _stage)
 	game.state_changed.connect(_refresh)
 	game.log_emitted.connect(_on_log)
 	game.run_ended.connect(_on_run_ended)
 	game.floor_cleared.connect(_on_floor_cleared)
 	game.thrown.connect(_on_thrown)
 	game.throw_began.connect(_on_throw_began)
+	game.turn_started.connect(_on_turn_started)
 	if _stage != null:
-		game.stage = _stage
 		if not _stage.throw_settled.is_connected(_on_stage_settled):
 			_stage.throw_settled.connect(_on_stage_settled)
 	_ledger.bind(game)
@@ -380,6 +380,20 @@ func _start_run() -> void:
 func _on_floor_cleared(_floor_number: int, _reclaimed: Array) -> void:
 	if game.phase == Game.Phase.BENCH:
 		_show_bench()
+
+
+## A fresh turn: the felt is cleared and nothing is scoreable until the
+## player has thrown.
+func _on_turn_started() -> void:
+	if _stage != null:
+		# Bare felt for a fresh turn — except for dice staked for the night,
+		# which stay down on the faces they were sealed on.
+		var held := game.staked_dice()
+		if held.is_empty():
+			_stage.clear_table()
+		else:
+			_stage.show_held(held)
+	_refresh()
 
 
 func _on_throw_began(_strength: int) -> void:
@@ -561,7 +575,7 @@ func _on_line_hovered(box: int) -> void:
 func _on_box_pressed(box: int) -> void:
 	if game == null or game.phase != Game.Phase.TURN or not game.card.is_open(box):
 		return
-	if game.dice_in_the_air:
+	if game.dice_in_the_air or not game.turn_rolled:
 		return
 	var value := game.preview(box)
 	_clear_overlay("%s for %d" % [Scoring.box_name(box), value])
@@ -645,9 +659,13 @@ func _refresh_dice() -> void:
 		view.queue_free()
 	_die_views.clear()
 	_scene.rolling_bounds = _clear_felt()
+	# Before the draw the felt is bare, save for dice staked for the night:
+	# they are already down, and their faces still count.
 	var live: Array = []
 	for d in game.pool.table:
-		if not d.lost:
+		if d.lost:
+			continue
+		if game.turn_rolled or d.locked:
 			live.append(d)
 	var physical: bool = _stage != null and game.stage == _stage
 	for placement in _scene.place_dice(live):
@@ -675,7 +693,7 @@ func _refresh_dice() -> void:
 
 func _refresh_throw_buttons() -> void:
 	var frozen := not game.can_throw()
-	var throws_left := game.rerolls_left
+	var throws_left := game.draws_left()
 	var free := game.free_dice_on_table()
 	for strength in _throw_buttons.size():
 		var button := _throw_buttons[strength]
@@ -717,6 +735,8 @@ func _refresh_throw_buttons() -> void:
 		_ledger.set_drawer(true)
 	_scene.dim_table = _ledger.urgent
 	_draws_label.text = "%d %s left" % [maxi(0, throws_left), "draw" if throws_left == 1 else "draws"]
+	if not game.turn_rolled and game.phase == Game.Phase.TURN:
+		_draws_label.text = "your draw"
 	_draws_label.add_theme_color_override("font_color",
 		ThemeColors.DECLARED if out_of_draws else ThemeColors.INK_DIM)
 
@@ -785,6 +805,10 @@ func _next_duel_floor() -> int:
 func _hint() -> String:
 	if game.phase != Game.Phase.TURN:
 		return ""
+	if not game.turn_rolled:
+		if Throw.staked_count(game.pool.table) > 0:
+			return "Only your staked dice are down. Throw the rest, and see what you are working with."
+		return "Nothing on the felt yet. Throw, and see what you are working with."
 	if not game.can_throw() or game.rerolls_left <= 0:
 		if _table_is_empty():
 			return "Every die is in the dirt. Settle a line — it will take nothing, and it is still gone for the run."

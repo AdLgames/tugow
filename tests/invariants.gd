@@ -108,14 +108,18 @@ func _check_invariants(game: Game, seed_value: int) -> void:
 
 	# A turn always has a legal move: something to throw, or a line to settle.
 	if game.phase == Game.Phase.TURN:
-		var can_act := game.can_throw() and game.rerolls_left > 0
-		_expect(can_act or card.open_count() > 0,
+		var can_act := game.can_throw() and game.draws_left() > 0
+		_expect(can_act or (game.turn_rolled and card.open_count() > 0),
 			"%s: a turn with nothing to throw and nothing to settle" % tag)
 
 
 func _random_turn(game: Game, seed_value: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
+	# Nothing can be settled before the dice have been thrown.
+	if not game.turn_rolled:
+		game.throw(rng.randi_range(0, 2))
+		return
 	if game.rerolls_left > 0 and game.can_throw() and rng.randf() < 0.7:
 		game.throw(rng.randi_range(0, 2))
 		return
@@ -178,7 +182,7 @@ func _fuzz_throws() -> void:
 			if entry["lost"]:
 				continue
 			expected += 1
-			if int(entry["cocked_on"]) != -1:
+			if int(entry["second_value"]) > 0:
 				expected += 1
 		_expect(ThrowContract.values_of(records).size() == expected,
 			"model throw %d: the resolver reads the wrong number of faces" % i)
