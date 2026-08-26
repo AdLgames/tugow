@@ -100,6 +100,30 @@ func table_radius(lip_radius: float) -> float:
 	return Vector2(global_position.x, global_position.z).length() / lip_radius
 
 
+## The orientation that shows a given face to the ceiling. A staked die is
+## put down showing the face it was staked on, rather than being thrown and
+## happening to agree.
+static func basis_showing(value: int) -> Basis:
+	for entry in FACE_AXES:
+		if int(entry[1]) != value:
+			continue
+		var axis: Vector3 = entry[0]
+		if axis.is_equal_approx(Vector3.UP):
+			return Basis.IDENTITY
+		if axis.is_equal_approx(Vector3.DOWN):
+			return Basis(Vector3.RIGHT, PI)
+		return Basis(axis.cross(Vector3.UP).normalized(), -PI * 0.5)
+	return Basis.IDENTITY
+
+
+## Set the die down at rest, showing `value`. Used for staked dice, which are
+## not thrown at all.
+func rest_at(at: Vector3, value: int) -> void:
+	throw_from(at, basis_showing(value), Vector3.ZERO, Vector3.ZERO)
+	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_SLEEPING, true)
+	settled_value = value
+
+
 ## Place and throw the die in one go, through the physics server.
 ##
 ## Determinism (D2) turned out to hinge on this. Assigning the transform races

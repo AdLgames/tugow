@@ -12,11 +12,18 @@ func _ready() -> void:
 		if arg.begins_with("--dir="):
 			_dir = arg.substr(6)
 	DirAccess.make_dir_recursive_absolute(_dir)
+	# Physical throws settle in real seconds; the still frames come from the
+	# model path. tools/dice_shot.tscn renders the physical table.
+	Balance.use_physics_dice = false
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	await get_tree().process_frame
 
-	await _shot("01_title")
+	await _shot("01_intro")
+	for _i in 8:
+		if not _press("Next"):
+			break
+	_press("Deal me in")
 	_press("Sit down")
 	_main._throw_buttons[Throw.Strength.HARD].pressed.emit()
 	await _shot("02_turn")
@@ -92,11 +99,12 @@ func _hold(prefix: String) -> void:
 			return
 
 
-func _press(prefix: String) -> void:
+func _press(prefix: String) -> bool:
 	for child in _main._overlay_body.get_children():
 		if child is Button and child.text.begins_with(prefix) and not child.disabled:
 			child.pressed.emit()
-			return
+			return true
+	return false
 
 
 func _shot(name: String) -> void:

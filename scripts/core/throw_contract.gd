@@ -45,6 +45,28 @@ static func derive(records: Array) -> Array:
 	return records
 
 
+## Dice already resting on the rail are shoved outward before the next throw
+## lands. This is what makes taking a rail double a decision rather than a
+## free double: lock it, settle now, or gamble it. Returns the dice lost.
+static func push_rail_dice(dice: Array, strength: int, long_throw: bool) -> Array[Die]:
+	var lost: Array[Die] = []
+	for die in dice:
+		if die.lost or die.locked or die.zone != Throw.Zone.RAIL:
+			continue
+		die.landing_radius += float(Balance.rail_push.get(strength, 0.0))
+		if die.landing_radius <= 1.0:
+			continue
+		if long_throw:
+			die.landing_radius = 0.98
+			continue
+		die.lost = true
+		die.zone = Throw.Zone.LOST
+		die.value = 0
+		die.second_value = 0
+		lost.append(die)
+	return lost
+
+
 static func zone_for_radius(radius: float) -> int:
 	if radius > 1.0:
 		return Throw.Zone.LOST

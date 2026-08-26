@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_charms()
 	_test_forge()
 	_test_adversaries()
+	_test_charm_limit()
 	_test_denial()
 	_test_floor_transition()
 	_test_overflow_carry()
@@ -218,6 +219,23 @@ func _test_forge() -> void:
 	while game.card.open_count() > 1:
 		game.card.burn(game.card.open_boxes()[0])
 	check(not Bench.can_afford(game, 1), "the last box is not for sale")
+
+
+## One charm a night, however many lines you are willing to burn.
+func _test_charm_limit() -> void:
+	var game := Game.new()
+	game.start_run(6161)
+	var first := Bench.next_charm(game)
+	check(first != null, "the bench offers a charm")
+	game.take_charm(first)
+	check(Bench.next_charm(game) == null, "and only the one, tonight")
+	var offered_ids: Array = []
+	for offer in Bench.offers(game):
+		offered_ids.append(offer["id"])
+	check(not offered_ids.has(&"take_charm"), "the charm is off the board once taken")
+	game.next_floor()
+	check(Bench.next_charm(game) != null, "the next night offers another")
+	check(game.charms_taken_tonight == 0, "the count resets with the night")
 
 
 func _test_adversaries() -> void:
@@ -436,32 +454,41 @@ func _test_model_matches_calibration() -> void:
 func _test_rail_persistence() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	# A die resting on the rail is shoved outward by the next throw.
+	# The shove lives in ThrowContract now, so that the model and the physics
+	# cannot apply it differently. Both paths call it before they throw.
 	var dice := _make_dice(2, rng)
 	dice[0].value = 6
 	dice[0].landing_radius = 0.95
 	dice[0].zone = Throw.Zone.RAIL
-	var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
-	check(dice[0].lost and result.pushed_off.has(dice[0]),
-		"a hard throw shoves a rail die off the table")
+	var lost := ThrowContract.push_rail_dice(dice, Throw.Strength.HARD, false)
+	check(dice[0].lost and lost.has(dice[0]), "a hard throw shoves a rail die off the table")
 
-	# Unless it was locked: locked dice cannot be lost.
+	# Unless it was staked: staked dice cannot be lost.
 	var safe := _make_dice(2, rng)
 	safe[0].value = 6
 	safe[0].landing_radius = 0.95
 	safe[0].zone = Throw.Zone.RAIL
 	safe[0].lock()
+	ThrowContract.push_rail_dice(safe, Throw.Strength.HARD, false)
 	Throw.resolve(safe, Throw.Strength.HARD, rng)
-	check(not safe[0].lost, "a locked die cannot be pushed off")
-	check(safe[0].value == 6, "a locked die keeps its face through a throw")
+	check(not safe[0].lost, "a staked die cannot be pushed off")
+	check(safe[0].value == 6, "a staked die keeps its face through a throw")
 
 	# Or unless you have the Long Throw.
 	var charmed := _make_dice(2, rng)
 	charmed[0].value = 6
 	charmed[0].landing_radius = 0.95
 	charmed[0].zone = Throw.Zone.RAIL
-	Throw.resolve(charmed, Throw.Strength.HARD, rng, true)
+	ThrowContract.push_rail_dice(charmed, Throw.Strength.HARD, true)
 	check(not charmed[0].lost, "Long Throw keeps hard throws on the table")
+
+	# A die in the pot is not shoved at all.
+	var quiet := _make_dice(2, rng)
+	quiet[0].value = 4
+	quiet[0].landing_radius = 0.30
+	quiet[0].zone = Throw.Zone.POT
+	ThrowContract.push_rail_dice(quiet, Throw.Strength.HARD, false)
+	check(not quiet[0].lost, "a die in the pot is left alone")
 
 
 func _test_collisions_and_cocking() -> void:
@@ -494,10 +521,13 @@ func _test_collisions_and_cocking() -> void:
 	pool.table = pool.dice
 	pool.dice[0].value = 5
 	pool.dice[1].value = 3
+	# A cocked die is one showing two faces; which two is the throwing path's
+	# business, and the rules only read the pair.
 	pool.dice[0].cocked_on = pool.dice[1].id
+	pool.dice[0].second_value = pool.dice[1].value
 	var values := pool.table_values()
 	check(values.size() == 3, "a cocked die adds a face to the table")
-	check(values.count(3) == 2, "the face beneath is read twice")
+	check(values.count(3) == 2, "its second face is read alongside its first")
 
 
 func _test_underside() -> void:

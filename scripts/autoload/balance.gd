@@ -47,9 +47,9 @@ var rail_mode: RailMode = RailMode.LINEAR
 ## gets. Re-run the tuner and update this table after any change to the dice,
 ## the table or the throw profiles.
 var zone_odds: Dictionary = {
-	0: {"pot": 0.86, "rail": 0.14, "lost": 0.00},   # SOFT
-	1: {"pot": 0.52, "rail": 0.45, "lost": 0.03},   # MEDIUM
-	2: {"pot": 0.23, "rail": 0.53, "lost": 0.24},   # HARD
+	0: {"pot": 0.83, "rail": 0.17, "lost": 0.00},   # SOFT
+	1: {"pot": 0.50, "rail": 0.44, "lost": 0.06},   # MEDIUM
+	2: {"pot": 0.22, "rail": 0.47, "lost": 0.31},   # HARD
 }
 
 ## How often a settled die is left showing two faces at once, measured the
@@ -106,6 +106,11 @@ var adversary_card_limit: int = 7
 var duel_reclaim: int = 3
 
 # --- Bench ------------------------------------------------------------------
+
+## Charms a night. The bench is visited once per night, so this is also the
+## cap per visit — without it a night with lines to spare could buy out half
+## the library at once.
+var charms_per_night: int = 1
 
 var bench_costs: Dictionary = {
 	"reshape_face": 1,

@@ -18,8 +18,8 @@ signal settled(outcome: Array)
 
 ## Table geometry, in metres.
 const LIP_RADIUS := 5.0
-const DIE_SIZE := 0.62
-const RAIL_HEIGHT := 0.62      ## Low enough that a hard throw clears it — D5.
+const DIE_SIZE := 0.44
+const RAIL_HEIGHT := 0.44      ## Low enough that a hard throw clears it — D5.
 const RAIL_SEGMENTS := 28
 const DIRT_Y := -4.0
 ## A die balanced on an edge must never hang the turn — D4.
@@ -79,13 +79,17 @@ func _build_table() -> void:
 	add_child(rail)
 
 
-func spawn(count: int) -> void:
+## `ids` names which dice of the pool these bodies are. The table holds five
+## of eight named dice, so a body's identity has to come from the game rather
+## than from its index — otherwise a face settles on one die and is read onto
+## another.
+func spawn(count: int, ids: Array = []) -> void:
 	for body in bodies:
 		remove_child(body)
 		body.free()
 	bodies.clear()
 	for i in count:
-		var body := DieBody.new(i, DIE_SIZE)
+		var body := DieBody.new(int(ids[i]) if i < ids.size() else i, DIE_SIZE)
 		add_child(body)
 		body.global_position = Vector3(-3.0 + i * 1.2, 6.0, 0.0)
 		bodies.append(body)
@@ -94,13 +98,17 @@ func spawn(count: int) -> void:
 ## Throw `dice` at the given strength. Same seed and same strength produce the
 ## same result: the impulses come from a seeded generator and the physics tick
 ## is fixed, so nothing here is tied to frame rate — D2.
-func begin_throw(dice: Array[DieBody], strength: int, seed_value: int) -> void:
+## `held` is [{id, value, position}] for dice that are staked: they are set
+## down showing their face and are not thrown. A staked die that tumbled would
+## contradict the rule that staking holds a face for the night.
+func begin_throw(dice: Array[DieBody], strength: int, seed_value: int,
+		held: Array = [], ids: Array = []) -> void:
 	# Fresh bodies every throw. The solver warm-starts from the previous
 	# frame's contacts, so two identical throws made from different histories
 	# diverge — dice that never touched each other in one run collide in the
 	# next. New RIDs carry no history, which is what makes a seed mean
 	# something. Five bodies is nothing to rebuild.
-	spawn(dice.size())
+	spawn(ids.size() if not ids.is_empty() else dice.size(), ids)
 	rng.seed = seed_value
 	_live = bodies
 	_elapsed = 0.0
@@ -108,11 +116,21 @@ func begin_throw(dice: Array[DieBody], strength: int, seed_value: int) -> void:
 	_release_queue.clear()
 	_last_release = 0.0
 
+	var held_by_id := {}
+	for entry in held:
+		held_by_id[int(entry["id"])] = entry
+
 	var profile: Dictionary = Balance.throw_impulses[strength]
 	for i in _live.size():
 		var body := _live[i]
 		body.cocked_on = -1
 		body.settled_value = 0
+		if held_by_id.has(body.die_id):
+			var entry: Dictionary = held_by_id[body.die_id]
+			var spot: Vector2 = entry["position"]
+			body.rest_at(Vector3(spot.x * LIP_RADIUS, DIE_SIZE * 0.5, spot.y * LIP_RADIUS),
+				int(entry["value"]))
+			continue
 		var release_at := float(i) * RELEASE_STAGGER + rng.randf_range(0.0, RELEASE_JITTER)
 		_last_release = maxf(_last_release, release_at)
 		var lateral := rng.randf_range(-1.0, 1.0) * float(profile["spread"])
@@ -121,7 +139,10 @@ func begin_throw(dice: Array[DieBody], strength: int, seed_value: int) -> void:
 		var aim := Vector3(
 			rng.randf_range(-1.0, 1.0) * float(profile["spread"]),
 			float(profile["lift"]),
-			-float(profile["impulse"]) * rng.randf_range(0.86, 1.14))
+			# Wider spread than a token wobble: with identical impulses and
+			# identical damping every die stops at the same depth, and five
+			# dice settle in a suspiciously tidy row.
+			-float(profile["impulse"]) * rng.randf_range(0.74, 1.26))
 		var spin := Vector3(
 			rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)
 		) * float(profile["spin"])

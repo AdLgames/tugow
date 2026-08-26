@@ -10,6 +10,8 @@ signal floor_cleared(floor_number: int, reclaimed: Array)
 signal run_ended(victory: bool, reason: String)
 signal player_wrote(box: int, value: int, denied: bool)
 signal thrown(result: Throw.Result)
+## Emitted the moment the dice leave the hand, before they land.
+signal throw_began(strength: int)
 signal dice_lost(dice: Array)
 signal adversary_declared(box: int)
 signal adversary_acted(line: String)
@@ -32,6 +34,13 @@ var turn_rolled: bool = false
 ## Chosen anew for every throw.
 var throw_strength: int = Throw.Strength.MEDIUM
 var last_throw: Throw.Result = null
+## Set while the dice are in the air. Nothing may be settled mid-throw.
+var dice_in_the_air: bool = false
+## Supplied by the interface. When present the throw is physical and takes
+## time; without one the model resolves it on the spot, which is what the
+## tests and the balance sweeps run on.
+var stage = null
+var _throw_seeds := RandomNumberGenerator.new()
 var phase: int = Phase.FLOOR_START
 var victory: bool = false
 var end_reason: String = ""
@@ -41,6 +50,8 @@ var last_player_values: Array = []
 ## Overshoot banked from the previous floor, and how much of it opened this one.
 var pending_carry: int = 0
 var floor_carry_in: int = 0
+## Charms taken since this night began.
+var charms_taken_tonight: int = 0
 var log_lines: Array[String] = []
 
 
@@ -52,6 +63,7 @@ func start_run(seed_value: int = 0) -> void:
 	victory = false
 	end_reason = ""
 	log_lines.clear()
+	charms_taken_tonight = 0
 	pending_carry = 0
 	floor_carry_in = 0
 	log_line("Thirteen lines. Settle them carefully.")
@@ -64,6 +76,7 @@ func next_floor() -> void:
 		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
 		return
 	threshold = Balance.threshold_for_floor(floor_number)
+	charms_taken_tonight = 0
 	floor_carry_in = pending_carry
 	floor_score = pending_carry
 	pending_carry = 0
@@ -100,7 +113,7 @@ func begin_turn() -> void:
 ## Throw strength is the main risk dial: soft never reaches the rail, hard
 ## scatters wide and can put dice off the table for the rest of the floor.
 func throw(strength: int = -1) -> void:
-	if phase != Phase.TURN:
+	if phase != Phase.TURN or dice_in_the_air:
 		return
 	if turn_rolled:
 		if rerolls_left <= 0:
@@ -109,16 +122,91 @@ func throw(strength: int = -1) -> void:
 	turn_rolled = true
 	if strength >= 0:
 		throw_strength = strength
-	if can_throw() == false:
+	if not can_throw():
+		return
+
+	# A die resting on the rail is shoved outward before anything new lands,
+	# whichever way the throw is resolved.
+	var pushed := ThrowContract.push_rail_dice(
+		pool.table, throw_strength, has_charm(&"long_throw"))
+	for die in pushed:
+		log_line("%s is shoved off the lip." % die.die_name)
+
+	throw_began.emit(throw_strength)
+	if stage != null:
+		dice_in_the_air = true
+		state_changed.emit()
+		stage.begin_throw(throw_strength, _throw_seeds.randi(),
+			_staked_dice(), _thrown_ids())
 		return
 	last_throw = pool.throw_table(throw_strength, has_charm(&"long_throw"))
+	_finish_throw(pushed)
+
+
+## Which of the eight are on the table this turn, in order. The simulation
+## needs their identities, not five anonymous bodies.
+func _thrown_ids() -> Array:
+	var ids: Array = []
+	for die in pool.table:
+		if not die.lost:
+			ids.append(die.id)
+	return ids
+
+
+## Staked dice are not thrown: the stage sets them down showing their face.
+func _staked_dice() -> Array:
+	var held: Array = []
+	for die in pool.table:
+		if die.locked and not die.lost:
+			held.append({
+				"id": die.id,
+				"value": die.value,
+				"position": die.landing_position(),
+			})
+	return held
+
+
+## Called by the stage once the bodies have settled. The faces, the zones and
+## the cocked dice are read off the table, not decided here.
+func apply_physical_throw(records: Array) -> void:
+	if not dice_in_the_air:
+		return
+	dice_in_the_air = false
+	var lost: Array[Die] = []
+	for entry in records:
+		var die := pool.get_die(int(entry["id"]))
+		if die == null or die.locked:
+			continue
+		var spot: Vector2 = entry["position"]
+		die.landing_radius = spot.length()
+		die.landing_angle = spot.angle()
+		die.zone = int(entry["zone"])
+		die.last_value = die.value
+		die.value = int(entry["value"])
+		die.repeated = die.value == die.last_value and die.value != 0
+		die.second_value = int(entry["second_value"])
+		die.cocked_on = die.id if die.second_value > 0 else -1
+		if entry["lost"] and not die.lost:
+			die.lost = true
+			lost.append(die)
+	var result := Throw.Result.new()
+	result.strength = throw_strength
+	result.lost = lost
+	for die in pool.table:
+		if die.second_value > 0:
+			result.cocked.append(die)
+	last_throw = result
+	_finish_throw(lost)
+
+
+func _finish_throw(lost: Array[Die]) -> void:
 	for c in charms:
 		c.on_roll(self)
 	log_line(last_throw.summary())
 	for c in last_throw.collisions:
 		log_line("  %s knocks %s from %d to %d." % c)
-	if not last_throw.lost.is_empty():
-		dice_lost.emit(last_throw.lost)
+	if not lost.is_empty():
+		dice_lost.emit(lost)
 	log_line("Table: %s" % pool.describe_table())
 	thrown.emit(last_throw)
 	state_changed.emit()
@@ -297,6 +385,7 @@ func leave_bench() -> void:
 
 func take_charm(charm: Charm) -> void:
 	charms.append(charm)
+	charms_taken_tonight += 1
 	log_line("Charm taken: %s — %s" % [charm.charm_name, charm.text])
 	state_changed.emit()
 

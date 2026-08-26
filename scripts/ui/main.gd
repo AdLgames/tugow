@@ -16,6 +16,7 @@ var _dice_layer: Control
 var _die_views: Array[DieView] = []
 var _ledger: LedgerView
 var _tray: DiceTray
+var _stage: DiceStage
 var _placard: Control
 var _night_label: Label
 var _score_label: Label
@@ -43,7 +44,10 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	clip_contents = true
 	_build()
-	_show_title()
+	if int(RunState.meta.get("runs", 0)) == 0:
+		_show_intro(0)
+	else:
+		_show_title()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -73,6 +77,24 @@ func _build() -> void:
 	_tray.position = Vector2(752, 838)
 	_tray.size = Vector2(1150, 54)
 	add_child(_tray)
+
+	# The physical dice, rendered into the clear felt. The 2D die views become
+	# labels and hit areas sitting over them.
+	if Balance.use_physics_dice:
+		_stage = DiceStage.new()
+		# Only the dice are rendered — the physical table has collision but no
+		# mesh, so the painted felt shows through. The stage therefore needs
+		# to cover the band of table that is actually visible, clipped to
+		# what the interface leaves free.
+		# Clear of the Ledger on the left, so no throw can put a die behind
+		# the sheet: the stage cannot render outside its own rectangle.
+		var clear_left := _ledger.position.x + _ledger.size.x + 40.0
+		var felt := _scene.felt_bounds().intersection(
+			Rect2(clear_left, 470, 1920 - clear_left - 40.0, 406))
+		_stage.position = felt.position
+		_stage.size = felt.size
+		_dice_layer.add_child(_stage)
+		_dice_layer.move_child(_stage, 0)
 
 	_build_placard()
 	_build_corners()
@@ -265,6 +287,27 @@ func _set_overlay_visible(shown: bool) -> void:
 
 # --- Screens -----------------------------------------------------------------
 
+## The explanation, once, before the first run — and on demand after it.
+func _show_intro(page_index: int) -> void:
+	var pages := Intro.pages()
+	if page_index < 0 or page_index >= pages.size():
+		_show_title()
+		return
+	var page: Intro.Page = pages[page_index]
+	_clear_overlay(page.title)
+	for line in page.lines:
+		_overlay_text(line)
+	_overlay_text("%d of %d" % [page_index + 1, pages.size()])
+	if page_index + 1 < pages.size():
+		_overlay_button("Next", func() -> void: _show_intro(page_index + 1))
+	else:
+		_overlay_button("Deal me in", _start_run)
+	if page_index > 0:
+		_overlay_button("Back", func() -> void: _show_intro(page_index - 1))
+	_overlay_button("Skip", _show_title)
+	_set_overlay_visible(true)
+
+
 func _show_title() -> void:
 	_clear_overlay("THIRTEEN BOXES")
 	_overlay_text("A dice roguelike where the ledger is your health bar.")
@@ -274,6 +317,7 @@ func _show_title() -> void:
 	_overlay_text("Runs: %d   Deepest night: %d   Best total: %d"
 		% [int(meta["runs"]), int(meta["deepest_floor"]), int(meta["best_total"])])
 	_overlay_button("Sit down", _start_run)
+	_overlay_button("How this works", func() -> void: _show_intro(0))
 	_set_overlay_visible(true)
 
 
@@ -284,6 +328,11 @@ func _start_run() -> void:
 	game.run_ended.connect(_on_run_ended)
 	game.floor_cleared.connect(_on_floor_cleared)
 	game.thrown.connect(_on_thrown)
+	game.throw_began.connect(_on_throw_began)
+	if _stage != null:
+		game.stage = _stage
+		if not _stage.throw_settled.is_connected(_on_stage_settled):
+			_stage.throw_settled.connect(_on_stage_settled)
 	_ledger.bind(game)
 	_scene.pool = game.pool
 	_log_view.text = ""
@@ -296,6 +345,16 @@ func _start_run() -> void:
 func _on_floor_cleared(_floor_number: int, _reclaimed: Array) -> void:
 	if game.phase == Game.Phase.BENCH:
 		_show_bench()
+
+
+func _on_throw_began(_strength: int) -> void:
+	_hint_label.text = "The dice are in the air."
+	_refresh_throw_buttons()
+
+
+## The bodies have settled: hand the table back to the rules.
+func _on_stage_settled(records: Array) -> void:
+	game.apply_physical_throw(records)
 
 
 func _on_thrown(_result: Throw.Result) -> void:
@@ -424,6 +483,8 @@ func _on_throw_hovered(strength: int) -> void:
 
 
 func _on_die_pressed(die: Die) -> void:
+	if game.dice_in_the_air:
+		return
 	if not game.would_lock_out(die):
 		game.lock_die(die)
 		return
@@ -456,6 +517,8 @@ func _on_line_hovered(box: int) -> void:
 
 func _on_box_pressed(box: int) -> void:
 	if game == null or game.phase != Game.Phase.TURN or not game.card.is_open(box):
+		return
+	if game.dice_in_the_air:
 		return
 	var value := game.preview(box)
 	_clear_overlay("%s for %d" % [Scoring.box_name(box), value])
@@ -514,23 +577,49 @@ func _refresh() -> void:
 	_placard.queue_redraw()
 
 
-## Dice sit where the throw resolver put them, scaled by how near they landed.
+## What is left of the table once the interface has taken its room: right of
+## the Ledger, below the man opposite, above the dice tray. Derived from the
+## real node rectangles so it cannot drift out of step with them.
+func _clear_felt() -> Rect2:
+	var left := _ledger.position.x + _ledger.size.x + 40.0
+	var top := 540.0
+	var bottom := _tray.position.y - 24.0
+	var right := 1880.0
+	return Rect2(left, top, right - left, bottom - top)
+
+
+## Dice are laid out by the scene, which keeps them inside the clear felt and
+## out of each other's way.
 func _refresh_dice() -> void:
 	for view in _die_views:
 		view.queue_free()
 	_die_views.clear()
+	_scene.rolling_bounds = _clear_felt()
+	var live: Array = []
 	for d in game.pool.table:
-		if d.lost:
-			continue
+		if not d.lost:
+			live.append(d)
+	var physical: bool = _stage != null and game.stage == _stage
+	for placement in _scene.place_dice(live):
 		var view := DieView.new()
 		_dice_layer.add_child(view)
-		view.bind(d)
-		var factor := _scene.die_scale(d)
+		view.bind(placement["die"])
+		var factor: float = placement["scale"]
 		view.scale = Vector2(factor, factor)
-		view.position = _scene.die_position(d) - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
+		view.position = placement["position"] - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
+		view.render_body = not physical
+		if physical:
+			# The label belongs to a real body. If that body cannot be
+			# located on screen the die is gone or out of frame, and a label
+			# floating at a made-up position would be worse than none.
+			var at := _stage.screen_position_of(int(placement["die"].id))
+			if at.x <= -900.0:
+				view.visible = false
+			else:
+				view.position = at - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
 		view.sway_left = _scene.sway_left
 		view.sway_right = _scene.sway_right
-		view.pressed.connect(_on_die_pressed.bind(d))
+		view.pressed.connect(_on_die_pressed.bind(placement["die"]))
 		_die_views.append(view)
 
 
@@ -548,6 +637,8 @@ func _refresh_throw_buttons() -> void:
 			reason = "every die in the dirt" if _table_is_empty() else "every die staked"
 		elif throws_left <= 0:
 			reason = "no draws left — settle a line"
+		if game.dice_in_the_air:
+			reason = "in the air"
 		button.disabled = reason != ""
 		# The name survives the disabled state; the reason sits under it.
 		button.text = "%s\n%s" % [

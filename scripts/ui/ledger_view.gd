@@ -15,8 +15,10 @@ const WIDTH := 610.0
 const ROW_HEIGHT := 28.0
 const HEADER := 74.0
 const PAD := 20.0
-## Previews sit out in the margin so the score column stays for real entries.
-const MARGIN_SHIFT := 26.0
+## Previews sit in their own column, inboard of the score column, so a
+## provisional number is never mistaken for a settled one — and never falls
+## off the edge of the paper.
+const MARGIN_SHIFT := -66.0
 
 var game: Game = null
 ## Set when the only legal move left is settling a line.
