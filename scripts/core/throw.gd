@@ -81,9 +81,10 @@ static func resolve(dice: Array[Die], strength: int, rng: RandomNumberGenerator,
 
 	# The rail shove is applied by the caller through ThrowContract, so that
 	# the physical path and this one cannot apply it differently.
-	# 2. Throw everything that is free to move.
+	# 2. Throw everything that is free to move. A held die keeps its face for
+	# the turn; a staked one keeps it for the night.
 	for d in dice:
-		if d.lost or d.locked:
+		if d.lost or d.kept():
 			continue
 		_place(d, strength, rng)
 		d.roll()
@@ -97,7 +98,7 @@ static func resolve(dice: Array[Die], strength: int, rng: RandomNumberGenerator,
 
 	# 5. Anything past the rail is gone for the rest of the floor.
 	for d in dice:
-		if d.lost or d.locked:
+		if d.lost or d.kept():
 			continue
 		if d.landing_radius > 1.0:
 			if long_throw:
@@ -228,7 +229,7 @@ static func _resolve_collisions(dice: Array[Die], result: Result, rng: RandomNum
 ## unrelated rate, so the model now draws from the measured one instead.
 static func _resolve_stacks(dice: Array[Die], result: Result, rng: RandomNumberGenerator) -> void:
 	for d in dice:
-		if d.lost or d.locked:
+		if d.lost or d.kept():
 			continue
 		d.cocked_on = -1
 		d.second_value = 0

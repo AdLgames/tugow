@@ -28,6 +28,27 @@ sits down only on the last night, week 5 for five of the seven. The last night
 of a week is always his, and it is that week's own adversary; the duel nights
 leading up to it are the ones you already beat, in the order you met them.
 
+## The turn
+
+Three draws, then settle one line.
+
+**Holding** keeps a die back from the next draw. It is free, reversible, and
+lasts only the turn you are in — it is what lets a hand be built toward a line
+at all. A held die is still sitting on the felt, so a landing die can knock it,
+and a held die on the rail is still shoved by the next throw.
+
+**Staking** keeps a die for the whole night, and nothing can touch it: it is
+never struck, never shoved, never lost. Staked dice also level — three scores
+and one of the die's faces is reshaped.
+
+A draw that would move nothing is refused rather than spent, so keeping every
+die back cannot burn a draw.
+
+Without a per-turn hold the card collapsed rather than depleted: only two or
+three lines score on any random hand, so once those were spent every remaining
+turn was a forced scratch. Measured over whole runs, the hold roughly halves
+the scratch rate and is worth more than every other decision in the turn.
+
 ## The throw
 
 Implemented as a **resolved model, not a physics simulation**

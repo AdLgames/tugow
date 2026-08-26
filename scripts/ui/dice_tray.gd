@@ -145,6 +145,11 @@ func _state_of(die: Die) -> Array:
 		return [Lore.LOCKED_TAG.to_lower(), Color("6b4a1e"),
 			ThemeColors.PAPER_HI.lerp(ThemeColors.LOCKED, 0.22),
 			Color(ThemeColors.LOCKED, 0.75)]
+	if die.held:
+		# Kept back from the next draw, but only for this turn, so the paper
+		# is marked rather than sealed.
+		return ["kept back", Color("3f5c2f"), ThemeColors.PAPER_HI.lerp(Color("6f8f52"), 0.16),
+			Color("4d6b36", 0.65)]
 	if die.is_cocked():
 		return ["leaning", Color("2f5c39"), plain, Color(0, 0, 0, 0)]
 	if die.zone == Throw.Zone.RAIL:

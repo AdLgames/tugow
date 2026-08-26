@@ -16,6 +16,11 @@ var value: int = 0
 var locked: bool = false
 ## Who locked it (relevant for the shared pool during a duel).
 var locked_by: String = ""
+## Kept back from the next draw, for this turn only. Holding is free and
+## costs nothing, but a held die is still sitting on the felt where a landing
+## die can knock it. Staking is what makes a face untouchable — and it lasts
+## the night.
+var held: bool = false
 
 ## Memory — the face shown on the previous roll. Charms read this.
 var last_value: int = 0
@@ -117,6 +122,11 @@ func _raw_roll() -> int:
 
 func is_cocked() -> bool:
 	return cocked_on != -1
+
+
+## Not going to be thrown: staked for the night, or held for this turn.
+func kept() -> bool:
+	return locked or held
 
 
 func lock(owner_tag: String = "player") -> void:

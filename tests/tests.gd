@@ -20,6 +20,8 @@ func _ready() -> void:
 	_test_charm_limit()
 	_test_denial()
 	_test_floor_transition()
+	_test_hold()
+	_test_hold_does_not_waste_draws()
 	_test_weekly_reset()
 	_test_duel_cadence()
 	_test_overflow_carry()
@@ -317,6 +319,63 @@ func _test_floor_transition() -> void:
 	check(game.threshold > 0 and game.rerolls_left == Balance.rerolls_per_turn, "the next floor resets the turn")
 	check(game.pool.locked_count() == 0, "a new floor unlocks every die")
 	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
+
+
+## Holding keeps a face for one turn. It is what lets a hand be built toward
+## a line at all, and it is deliberately weaker than staking.
+func _test_hold() -> void:
+	var game := Game.new()
+	game.start_run(9001)
+	game.throw(Throw.Strength.SOFT)
+	var die: Die = game.pool.table[0]
+	while die.lost or die.value == 0:
+		game.pool.table.remove_at(0)
+		die = game.pool.table[0]
+	var face := die.value
+
+	game.toggle_hold(die)
+	check(die.held, "a die can be kept back")
+	check(die.kept() and not die.locked, "kept, but not staked")
+	game.throw(Throw.Strength.SOFT)
+	check(die.value == face, "a held die keeps its face through a draw")
+
+	game.toggle_hold(die)
+	check(not die.held, "and can be let go again")
+
+	# Holding is for the turn you are in.
+	game.hold_die(die, true)
+	game.write_box(game.card.open_boxes()[0])
+	for d in game.pool.table:
+		check(not d.held, "a new turn releases every hold")
+
+	# Staking supersedes a hold, and cannot be undone by clicking again.
+	var g2 := Game.new()
+	g2.start_run(9002)
+	g2.throw(Throw.Strength.SOFT)
+	var keeper: Die = null
+	for d in g2.pool.table:
+		if not d.lost and d.value > 0 and not g2.would_lock_out(d):
+			keeper = d
+			break
+	if keeper != null:
+		g2.hold_die(keeper, true)
+		g2.lock_die(keeper)
+		check(keeper.locked and not keeper.held, "staking a held die takes over the hold")
+		g2.toggle_hold(keeper)
+		check(not keeper.held, "a staked die cannot be un-held")
+
+
+## A draw that cannot move a die is refused rather than spent.
+func _test_hold_does_not_waste_draws() -> void:
+	var game := Game.new()
+	game.start_run(9003)
+	game.throw(Throw.Strength.SOFT)
+	for d in game.pool.table:
+		game.hold_die(d, true)
+	check(game.throwable_dice() == 0, "nothing left that would move")
+	var before := game.rerolls_left
+	game.throw(Throw.Strength.SOFT)
+	check(game.rerolls_left == before, "the draw is not spent on a table that cannot change")
 
 
 ## A week is the unit of play: thirteen lines have to carry seven nights, and

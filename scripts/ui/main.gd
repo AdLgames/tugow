@@ -391,7 +391,7 @@ func _on_turn_started() -> void:
 	if _stage != null:
 		# Bare felt for a fresh turn — except for dice staked for the night,
 		# which stay down on the faces they were sealed on.
-		var held := game.staked_dice()
+		var held := game.kept_dice()
 		if held.is_empty():
 			_stage.clear_table()
 		else:
@@ -548,6 +548,16 @@ func _on_throw_hovered(strength: int) -> void:
 		_scene.queue_redraw()
 
 
+## The light gesture: keep this face out of the next draw. Free, reversible,
+## and only for this turn.
+func _on_die_held(die: Die) -> void:
+	if game.dice_in_the_air:
+		return
+	game.toggle_hold(die)
+	_refresh()
+
+
+## The heavy one: stake it for the night.
 func _on_die_pressed(die: Die) -> void:
 	if game.dice_in_the_air:
 		return
@@ -704,7 +714,8 @@ func _refresh_dice() -> void:
 				view.position = at - Vector2(DieView.SIZE, DieView.SIZE) * 0.5 * factor
 		view.sway_left = _scene.sway_left
 		view.sway_right = _scene.sway_right
-		view.pressed.connect(_on_die_pressed.bind(placement["die"]))
+		view.pressed.connect(_on_die_held.bind(placement["die"]))
+		view.stake_requested.connect(_on_die_pressed.bind(placement["die"]))
 		_die_views.append(view)
 
 

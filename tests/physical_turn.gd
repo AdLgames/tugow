@@ -28,6 +28,12 @@ func _ready() -> void:
 	check(game.stage != null, "the run is wired to the physical dice")
 
 	for turn in TURNS:
+		# A night that clears mid-test opens the bench. Walk straight out of
+		# it and keep throwing: this test is about the physical turn, and how
+		# many turns a night takes now depends on how well the dice are held.
+		if game.phase == Game.Phase.BENCH:
+			game.leave_bench()
+			await get_tree().process_frame
 		if game.phase != Game.Phase.TURN:
 			break
 		# Captured through an array: GDScript lambdas copy plain locals.

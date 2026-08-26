@@ -9,6 +9,7 @@ extends Node
 
 const RUNS := 200
 const GUARD := 600
+const BEST_POLICY := "hold + stake rail"
 
 
 func _ready() -> void:
@@ -20,7 +21,40 @@ func _ready() -> void:
 	_how_runs_end()
 	_depletion()
 	_hold_experiment()
+	_write_values()
 	get_tree().quit(0)
+
+
+## What a write is actually worth in play, as opposed to in the abstract.
+func _write_values() -> void:
+	print("\n=== What a write is worth in play ===")
+	for policy in ["stake rail, all draws", "hold toward a line", "hold + stake rail"]:
+		var writes: Array[int] = []
+		var struck := 0
+		for seed_value in 60:
+			var game := Game.new()
+			game.start_run(seed_value)
+			var before := 0
+			var guard := 0
+			while game.phase != Game.Phase.RUN_OVER and guard < GUARD:
+				guard += 1
+				if game.phase == Game.Phase.BENCH:
+					game.leave_bench()
+					continue
+				_take_turn(game, policy)
+				writes.append(game.card.run_total - before)
+				before = game.card.run_total
+			struck += game.card.spend_order.size()
+		writes.sort()
+		var sum := 0
+		var zeros := 0
+		for v in writes:
+			sum += v
+			if v == 0:
+				zeros += 1
+		print("  %-22s mean %4d  median %4d  scratches %d%%"
+			% [policy, sum / maxi(1, writes.size()), writes[writes.size() / 2],
+				100 * zeros / maxi(1, writes.size())])
 
 
 ## What would a per-turn hold be worth? Today a redraw rerolls every die, so
@@ -184,12 +218,12 @@ func _depletion() -> void:
 ## Which constraint actually kills a run: the Ledger running out of lines, or
 ## the man across the table taking them?
 func _how_runs_end() -> void:
-	print("\n=== How runs end (best policy, %d runs) ===" % RUNS)
+	print("\n=== How runs end (%s, %d runs) ===" % [BEST_POLICY, RUNS])
 	var reasons := {}
 	var lines_spent := 0
 	var nights := 0
 	for seed_value in RUNS:
-		var game := _play("stake rail, all draws", seed_value)
+		var game := _play(BEST_POLICY, seed_value)
 		var key := "ledger full" if game.end_reason.find("Ledger is full") >= 0 else \
 			("adversary took the card" if game.end_reason.find("seven lines") >= 0 else "other")
 		if game.victory:
@@ -199,6 +233,7 @@ func _how_runs_end() -> void:
 		nights += game.floor_number
 	for key in reasons:
 		print("  %-26s %d" % [key, reasons[key]])
+	print("  mean night reached: %.2f of %d" % [float(nights) / RUNS, Balance.total_nights()])
 	print("  mean lines spent: %.1f over %.1f nights (%.2f lines a night)"
 		% [float(lines_spent) / RUNS, float(nights) / RUNS,
 			float(lines_spent) / maxf(1.0, float(nights))])
@@ -281,7 +316,8 @@ func _policies() -> void:
 	print("%-22s %7s %7s %7s %7s %7s" % ["policy", "mean", "median", "best", "wins", "total"])
 	for policy in ["one throw, greedy", "all draws, greedy", "all draws, careful",
 			"all draws, damn fool", "stake >=5, all draws", "stake rail, all draws",
-			"clear-the-night", "hoard the big lines"]:
+			"clear-the-night", "hoard the big lines",
+			"hold toward a line", "hold + stake rail", "hold + clear-the-night"]:
 		_report(policy)
 
 
@@ -339,18 +375,23 @@ func _play(policy: String, seed_value: int) -> Game:
 	return game
 
 
-## Buy whatever is affordable, cheapest first, while lines remain to spare.
-## Spending a line here is spending a turn later, so the bot keeps a reserve.
+## Lines are turns. Spending one at the bench is spending a night later, so
+## the bot buys at most one thing a visit and only out of genuine surplus —
+## an earlier version bought until it was broke and starved itself of turns,
+## which is a trap a player can fall into just as easily.
 func _shop(game: Game) -> void:
+	var nights_left := Balance.nights_per_week - Balance.night_of(game.floor_number)
+	if game.card.open_count() <= nights_left + 4:
+		return
 	var guard := 0
-	while guard < 12:
+	while guard < 1:
 		guard += 1
 		var bought := false
 		for offer in Bench.offers(game):
 			var cost := int(offer["cost"])
 			if not Bench.can_afford(game, cost):
 				continue
-			if game.card.open_count() - cost < 4:
+			if game.card.open_count() - cost <= nights_left + 2:
 				continue
 			var target := -1
 			if String(offer["target"]) == "die":
@@ -382,6 +423,8 @@ func _take_turn(game: Game, policy: String) -> void:
 	while game.draws_left() > 0:
 		game.throw(strength)
 		_stake(game, policy)
+		if policy.begins_with("hold"):
+			_hold_toward_target(game)
 		if not _wants_another_draw(game, policy):
 			break
 	var boxes := game.card.open_boxes()
@@ -399,11 +442,37 @@ func _strength_for(policy: String) -> int:
 	return Throw.Strength.MEDIUM
 
 
+## Pick the open line this hand is closest to paying on, and keep the dice
+## that serve it. This is the whole point of the hold: without it a hand can
+## never be built toward anything.
+func _hold_toward_target(game: Game) -> void:
+	var open_boxes := game.card.open_boxes()
+	if open_boxes.is_empty():
+		return
+	var live: Array[Die] = []
+	for d in game.pool.table:
+		if not d.lost and d.value > 0:
+			live.append(d)
+	if live.is_empty():
+		return
+	var values: Array = []
+	for d in live:
+		values.append(d.value)
+	var target := _best_target(open_boxes, values)
+	var keep := _keep_for(target, values)
+	for i in live.size():
+		game.hold_die(live[i], keep[i])
+
+
 func _wants_another_draw(game: Game, policy: String) -> bool:
 	if policy == "one throw, greedy":
 		return false
 	if not game.can_throw():
 		return false
+	if policy.begins_with("hold"):
+		# With a hold, a redraw only improves the dice you did not keep, so
+		# it is always worth taking while anything is still free to move.
+		return game.throwable_dice() > 0
 	if policy == "reroll only weak hands":
 		# Throw again only when what is on the felt cannot finish the night.
 		# Every die is rerolled, so a good hand is destroyed by trying.
@@ -419,14 +488,14 @@ func _wants_another_draw(game: Game, policy: String) -> bool:
 ## making a much bigger commitment than a Yahtzee hold.
 func _stake(game: Game, policy: String) -> void:
 	match policy:
-		"stake >=5, all draws":
-			for d in game.pool.table:
-				if not d.locked and not d.lost and d.value >= 5 and not game.would_lock_out(d):
-					game.lock_die(d)
-		"stake rail, all draws":
+		"hold + stake rail", "stake rail, all draws":
 			for d in game.pool.table:
 				if not d.locked and not d.lost and d.zone == Throw.Zone.RAIL \
 						and not game.would_lock_out(d):
+					game.lock_die(d)
+		"stake >=5, all draws":
+			for d in game.pool.table:
+				if not d.locked and not d.lost and d.value >= 5 and not game.would_lock_out(d):
 					game.lock_die(d)
 
 
@@ -439,7 +508,7 @@ func _choose_box(game: Game, boxes: Array, policy: String) -> int:
 			best_value = v
 			best = box
 	match policy:
-		"clear-the-night":
+		"clear-the-night", "hold + clear-the-night":
 			# Spend the cheapest line that still finishes the night. Anything
 			# more is a line burned for points you did not need.
 			var need := game.threshold - game.floor_score

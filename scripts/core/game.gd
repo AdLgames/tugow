@@ -128,6 +128,8 @@ func begin_turn() -> void:
 	# dice are the exception: they were sealed for the night and keep the face
 	# they were sealed on.
 	for die in pool.table:
+		# Holding is for the turn you are in, so a new turn releases them all.
+		die.held = false
 		if die.locked:
 			continue
 		die.value = 0
@@ -146,6 +148,10 @@ func begin_turn() -> void:
 ## scatters wide and can put dice off the table for the rest of the floor.
 func throw(strength: int = -1) -> void:
 	if phase != Phase.TURN or dice_in_the_air:
+		return
+	# Every die kept back means the throw would change nothing. Spending a
+	# draw on it would be a pure loss, so it is refused instead.
+	if turn_rolled and throwable_dice() == 0:
 		return
 	if turn_rolled:
 		if rerolls_left <= 0:
@@ -169,7 +175,7 @@ func throw(strength: int = -1) -> void:
 		dice_in_the_air = true
 		state_changed.emit()
 		stage.begin_throw(throw_strength, _throw_seeds.randi(),
-			staked_dice(), _thrown_ids())
+			kept_dice(), _thrown_ids())
 		return
 	last_throw = pool.throw_table(throw_strength, has_charm(&"long_throw"))
 	_finish_throw(pushed)
@@ -185,11 +191,12 @@ func _thrown_ids() -> Array:
 	return ids
 
 
-## Staked dice are not thrown: the stage sets them down showing their face.
-func staked_dice() -> Array:
+## Dice that are not being thrown — staked for the night or held for the
+## turn. The stage sets them down showing the face they already have.
+func kept_dice() -> Array:
 	var held: Array = []
 	for die in pool.table:
-		if die.locked and not die.lost:
+		if die.kept() and not die.lost:
 			held.append({
 				"id": die.id,
 				"value": die.value,
@@ -262,10 +269,39 @@ func can_throw() -> bool:
 	return false
 
 
+## Keep a die back from the next draw, for this turn only. Free, reversible,
+## and the reason a hand can be built toward a line at all — but a held die is
+## still on the felt, where a landing die can knock it to a new face.
+func toggle_hold(die: Die) -> void:
+	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
+		return
+	die.held = not die.held
+	state_changed.emit()
+
+
+func hold_die(die: Die, on: bool = true) -> void:
+	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
+		return
+	if die.held == on:
+		return
+	die.held = on
+	state_changed.emit()
+
+
+## Dice that would actually move if you threw now.
+func throwable_dice() -> int:
+	var n := 0
+	for d in pool.table:
+		if not d.kept() and not d.lost:
+			n += 1
+	return n
+
+
 ## Locked is locked for the entire floor, not the turn.
 func lock_die(die: Die) -> void:
 	if phase != Phase.TURN or die.locked or die.value == 0:
 		return
+	die.held = false
 	pool.lock_die(die, "player")
 	for c in charms:
 		c.on_lock(self, die)
