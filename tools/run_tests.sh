@@ -10,3 +10,6 @@ fi
 "$GODOT" --headless --path "$ROOT" res://tests/tests.tscn
 "$GODOT" --headless --path "$ROOT" res://tests/invariants.tscn
 "$GODOT" --headless --path "$ROOT" res://tests/dice3d_tests.tscn
+"$GODOT" --headless --path "$ROOT" res://tests/physical_turn.tscn
+# Needs a display: the point of it is what the dice actually render as.
+xvfb-run -a "$GODOT" --path "$ROOT" res://tests/die_face_render.tscn

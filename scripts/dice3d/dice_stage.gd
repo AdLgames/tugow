@@ -121,9 +121,7 @@ func _dress_bodies() -> void:
 			continue
 		var mesh := MeshInstance3D.new()
 		mesh.name = "Mesh"
-		var box := BoxMesh.new()
-		box.size = Vector3.ONE * DiceSim.DIE_SIZE
-		mesh.mesh = box
+		mesh.mesh = DieMesh.build(DiceSim.DIE_SIZE)
 		mesh.material_override = _pip_material
 		body.add_child(mesh)
 

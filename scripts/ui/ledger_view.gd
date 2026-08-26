@@ -10,6 +10,7 @@ extends Control
 
 signal line_pressed(box: int)
 signal line_hovered(box: int)
+signal drawer_toggled(open: bool)
 
 const WIDTH := 610.0
 const ROW_HEIGHT := 28.0
@@ -23,6 +24,23 @@ const MARGIN_SHIFT := -66.0
 var game: Game = null
 ## Set when the only legal move left is settling a line.
 var urgent: bool = false
+
+## The Ledger lives as a drawer: tucked into the bottom of the table with a
+## corner showing, pulled up when you want to read it. It is the second most
+## important object on screen, but it is not the one you are looking at most
+## of the time — the dice are.
+var drawer_open: bool = false
+## 0 tucked away, 1 fully out. Animated between.
+var drawer_slide: float = 0.0
+## How much of the sheet shows when it is closed.
+const PEEK := 0.25
+## Both ends of the slide, in the well's own coordinates. The well clips, so
+## the closed sheet is genuinely cut off by the bottom bar rather than drawn
+## over it.
+var open_position: Vector2 = Vector2.ZERO
+var closed_position: Vector2 = Vector2.ZERO
+
+var _slide_tween: Tween
 var _hover_row: int = -1
 
 
@@ -31,6 +49,40 @@ func _init() -> void:
 	size = custom_minimum_size
 	rotation = deg_to_rad(-1.1)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+## Where the sheet sits for a given slide, between tucked away and fully out.
+func slide_position(slide: float) -> Vector2:
+	return closed_position.lerp(open_position, slide)
+
+
+func set_drawer(open: bool, animate: bool = true) -> void:
+	if drawer_open == open and _slide_tween != null and _slide_tween.is_running():
+		return
+	drawer_open = open
+	drawer_toggled.emit(open)
+	var target := 1.0 if open else 0.0
+	if not animate:
+		drawer_slide = target
+		position = slide_position(target)
+		queue_redraw()
+		return
+	if _slide_tween != null and _slide_tween.is_valid():
+		_slide_tween.kill()
+	_slide_tween = create_tween()
+	_slide_tween.set_ease(Tween.EASE_OUT)
+	_slide_tween.set_trans(Tween.TRANS_CUBIC)
+	_slide_tween.tween_method(_apply_slide, drawer_slide, target, 0.28)
+
+
+func toggle_drawer() -> void:
+	set_drawer(not drawer_open)
+
+
+func _apply_slide(slide: float) -> void:
+	drawer_slide = slide
+	position = slide_position(slide)
+	queue_redraw()
 
 
 func bind(p_game: Game) -> void:
@@ -46,9 +98,13 @@ func _gui_input(event: InputEvent) -> void:
 			line_hovered.emit(row)
 			queue_redraw()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		# The head of the sheet is the handle; the lines themselves are only
+		# live once it is out.
 		var row := _row_at(event.position.y)
-		if row >= 0:
-			line_pressed.emit(row)
+		if row < 0 or not drawer_open:
+			toggle_drawer()
+			return
+		line_pressed.emit(row)
 
 
 func _notification(what: int) -> void:
@@ -68,6 +124,7 @@ func _row_at(y: float) -> int:
 func _draw() -> void:
 	_draw_paper()
 	var font := ThemeDB.fallback_font
+	_draw_handle(font)
 	draw_string(font, Vector2(PAD, 30), Lore.CARD.to_upper(),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("241c14"))
 	if game != null:
@@ -88,6 +145,16 @@ func _draw() -> void:
 
 	for box in Scoring.BOX_COUNT:
 		_draw_line(box, font, declared, best)
+
+
+## A tab on the head of the sheet, so the drawer reads as a drawer.
+func _draw_handle(font: Font) -> void:
+	var label := "PULL UP THE LEDGER" if not drawer_open else "TUCK IT AWAY"
+	var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+	draw_string(font, Vector2(size.x - PAD - width, 30), label,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.10, 0.08, 0.13, 0.45))
+	var grip := Vector2((size.x - 54.0) * 0.5, 8.0)
+	draw_rect(Rect2(grip, Vector2(54, 4)), Color(0.10, 0.08, 0.13, 0.22), true)
 
 
 func _draw_paper() -> void:

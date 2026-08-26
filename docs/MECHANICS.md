@@ -175,6 +175,32 @@ The 2D die views become labels and hit areas over the rendered dice: a name, a
 state tag, and a ring when staked or on the rail. A view whose body cannot be
 located on screen hides rather than falling back to a made-up position.
 
+## The dice as objects
+
+`scripts/dice3d/die_mesh.gd` builds the cube face by face rather than using a
+BoxMesh. A BoxMesh's own unwrap puts the six faces somewhere in the texture,
+and "somewhere" is not good enough: the face pointing at the ceiling is the
+face the rules score, so the pips a player counts have to be the pips on that
+side of the cube. Opposite faces sum to seven, as a real die's do.
+
+`tests/die_face_render.tscn` is the test that matters, and the only one that
+needs a display: it orients a die to each value in turn, renders it from
+above, counts the dots in the picture, and fails if the picture disagrees
+with the rules. It caught both halves of this being wrong — the triangle
+winding was reversed, so every face was culled and the camera saw the inside
+of the far one (a die scored as six rendered as one), and the orientation
+helper turned the wanted face downward, so two through five each showed
+their opposite.
+
+## The Ledger drawer
+
+The Ledger is tucked into the bottom of the table with a quarter of it
+showing, and pulled up when you want to read it. It lives in a well that
+clips, so a closed sheet is genuinely cut off by the bottom bar rather than
+drawn across it. The head of the sheet is the handle; the lines are only live
+once it is out. When the only legal move left is settling a line, it opens
+itself — there is no sense making someone hunt for the one thing they can do.
+
 ## The clear felt
 
 Dice land in the region of table left over once the Ledger, the dice tray and

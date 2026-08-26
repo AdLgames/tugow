@@ -29,6 +29,7 @@ func _ready() -> void:
 	await _shot("02_turn")
 
 	# The confirm overlay: writing a box is irreversible for the whole run.
+	_main._ledger.set_drawer(true, false)
 	_main._ledger.line_pressed.emit(_best_box())
 	await _shot("03_confirm")
 	_hold("Hold to write it")
@@ -75,6 +76,7 @@ func _play_one_turn() -> void:
 			view.pressed.emit()
 			if _main._overlay.visible:
 				_press("Stake it anyway")
+	_main._ledger.set_drawer(true, false)
 	_main._ledger.line_pressed.emit(_best_box())
 	_hold("Hold to write it")
 	await get_tree().process_frame

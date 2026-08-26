@@ -76,6 +76,7 @@ func _take_turn(game: Game) -> void:
 				# The lock-out warning: this is the last free die.
 				_press("Stake it anyway")
 	var box := _best_box(game)
+	_main._ledger.set_drawer(true, false)
 	_main._ledger.line_pressed.emit(box)
 	if not _main._overlay.visible:
 		_fail("writing a box did not ask for confirmation")

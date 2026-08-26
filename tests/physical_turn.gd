@@ -62,6 +62,7 @@ func _ready() -> void:
 
 		var open := game.card.open_boxes()
 		if not open.is_empty():
+			_main._ledger.set_drawer(true, false)
 			_main._ledger.line_pressed.emit(open[0])
 			if not _hold("Hold to write it"):
 				_fail("turn %d: no way to settle a line" % turn)
