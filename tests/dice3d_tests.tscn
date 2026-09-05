@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://tests/dice3d_tests.gd" id="1_dice3d"]
-
-[node name="Dice3DTests" type="Node"]
-script = ExtResource("1_dice3d")

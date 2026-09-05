@@ -1,540 +1,447 @@
 class_name Game
 extends RefCounted
-## The run. Floors, turns, boxes, and the Adversary duel — all headless so the
-## same object drives the UI and the tests.
+## The booth. One traveller at a time, three questions, one decision.
+##
+## Two clocks run underneath: `dread`, which decides how often the room does
+## something, and an armed scare, which is deliberately timed to land on the
+## *next* traveller rather than the one you got wrong. Nothing in the
+## interface names either of them.
 
-signal log_emitted(line: String)
+signal shift_started(number: int, title: String, opening: String)
+signal traveller_arrived(traveller: Traveller)
+signal answered(question: int, ask: String, reply: String, tell: int)
+signal decided(traveller: Traveller, approved: bool, correct: bool)
+## The faceless one, refusing to be refused.
+signal refused_deny()
+signal scare_armed(scare: int, delay: float)
+signal scare_fired(scare: int, copy: String)
+signal ambient(line: String)
+signal shift_ended(number: int)
+signal run_ended(ending: StringName, reason: String)
 signal state_changed()
-signal floor_started(floor_number: int, threshold: int)
-signal floor_cleared(floor_number: int, reclaimed: Array)
-signal week_started(week_number: int, reopened: Array)
-signal run_ended(victory: bool, reason: String)
-signal player_wrote(box: int, value: int, denied: bool)
-signal thrown(result: Throw.Result)
-## Emitted the moment the dice leave the hand, before they land.
-signal throw_began(strength: int)
-## A fresh turn, with nothing on the table yet.
-signal turn_started()
-signal dice_lost(dice: Array)
-signal adversary_declared(box: int)
-signal adversary_acted(line: String)
 
-enum Phase { FLOOR_START, TURN, BENCH, RUN_OVER }
+enum Phase { SHIFT_OPENING, QUESTIONING, DECIDED, SHIFT_OVER, RUN_OVER }
+enum Ending { NONE, KEPT_THE_LINE, EMPTIED_THE_ZONE, TURNED_EVERYONE_AWAY }
 
-## Nights in a run. A run is weeks, and a week is nights; this is the product.
-static func total_nights() -> int:
-	return Balance.total_nights()
+var phase: int = Phase.SHIFT_OPENING
+var shift: int = 0
+var shift_title: String = ""
 
-var card: Scorecard
-var pool: DicePool
-var charms: Array[Charm] = []
-var adversary: Adversary = null
+var line: Array[Traveller] = []
+var index: int = 0
+var current: Traveller = null
 
-var floor_number: int = 0
-var threshold: int = 0
-var floor_score: int = 0
-var floor_turn: int = 0
-var rerolls_left: int = 0
-var turn_rolled: bool = false
-## Chosen anew for every throw.
-var throw_strength: int = Throw.Strength.MEDIUM
-var last_throw: Throw.Result = null
-## Set while the dice are in the air. Nothing may be settled mid-throw.
-var dice_in_the_air: bool = false
-## Supplied by the interface. When present the throw is physical and takes
-## time; without one the model resolves it on the spot, which is what the
-## tests and the balance sweeps run on.
-var stage = null
-var _throw_seeds := RandomNumberGenerator.new()
-var phase: int = Phase.FLOOR_START
-var victory: bool = false
+var asks_left: int = 0
+var asked_this_traveller: Array[int] = []
+
+## Hidden. Never rendered, never named.
+var dread: int = 0
+var lights: int = Dread.WINDOW_LIGHTS
+
+var things_let_through: int = 0
+var people_turned_away: int = 0
+var things_denied: int = 0
+var people_approved: int = 0
+
+## A scare waits on a clock, not on an event.
+var armed_scare: int = -1
+var armed_at: float = 0.0
+var armed_seen_travellers: int = 0
+var human_question_used: bool = false
+
+## How many times each question has been leant on. Things learn.
+var question_uses: Dictionary = {}
+## Learned questions stop working, per shift they were learned.
+var learned: Array[int] = []
+
+## People you turned away who are owed a return.
+var owed_returns: Array = []
+
+var log_lines: Array[String] = []
+var ending: int = Ending.NONE
 var end_reason: String = ""
 
-## The player's last completed table, read by the Reflection and the Magpie.
-var last_player_values: Array = []
-## Overshoot banked from the previous floor, and how much of it opened this one.
-var pending_carry: int = 0
-var floor_carry_in: int = 0
-## Charms taken since this night began.
-var charms_taken_this_week: int = 0
-## Which week the run is in, and whether this night ends one.
-var week_number: int = 0
-var log_lines: Array[String] = []
+const FACELESS_SHIFT := 5
+
+var rng := RandomNumberGenerator.new()
+var _clock: float = 0.0
 
 
 func start_run(seed_value: int = 0) -> void:
-	card = Scorecard.new()
-	pool = DicePool.new(Balance.pool_size, seed_value)
-	charms.clear()
-	floor_number = 0
-	victory = false
-	end_reason = ""
+	rng.seed = seed_value
+	shift = 0
+	dread = 0
+	lights = Dread.WINDOW_LIGHTS
+	things_let_through = 0
+	people_turned_away = 0
+	things_denied = 0
+	people_approved = 0
+	armed_scare = -1
+	human_question_used = false
+	question_uses.clear()
+	learned.clear()
+	owed_returns.clear()
 	log_lines.clear()
-	charms_taken_this_week = 0
-	week_number = 0
-	pending_carry = 0
-	floor_carry_in = 0
-	log_line("Thirteen lines, seven nights. Settle them carefully.")
-	next_floor()
+	ending = Ending.NONE
+	end_reason = ""
+	_clock = 0.0
+	next_shift()
 
 
-func next_floor() -> void:
-	floor_number += 1
-	if floor_number > total_nights():
-		_end_run(true, "You walked out with %s." % Lore.lines_owed(card.open_count()))
+# --- Shifts ------------------------------------------------------------------
+
+func next_shift() -> void:
+	shift += 1
+	if shift > Shifts.count():
+		_finish_run()
 		return
-	# A new week means fresh paper and a charm for the one you survived. The
-	# wipe happens here rather than at the end of the last night so the
-	# Ledger you finished a week on is still readable while the night closes.
-	var week := Balance.week_of(floor_number)
-	if week != week_number:
-		week_number = week
-		charms_taken_this_week = 0
-		if floor_number > 1:
-			_begin_week()
-	threshold = Balance.threshold_for_floor(floor_number)
-	floor_carry_in = pending_carry
-	floor_score = pending_carry
-	pending_carry = 0
-	floor_turn = 0
-	phase = Phase.FLOOR_START
-	pool.begin_floor()
-	adversary = AdversaryRoster.for_floor(floor_number) if Balance.is_duel_floor(floor_number) else null
-	for c in charms:
-		c.on_floor_start(self)
-	log_line("--- %s — threshold %d ---" % [Lore.night(floor_number), threshold])
-	if floor_carry_in > 0:
-		log_line("Carried in: %d." % floor_carry_in)
-	if adversary != null:
-		adversary.on_duel_start(self)
-		log_line("%s steps up to the card. %s" % [adversary.display_name, adversary.blurb])
-		_adversary_declare()
-	floor_started.emit(floor_number, threshold)
-	begin_turn()
-
-
-## Compose the table for a new turn. Locked dice are still sitting there.
-func begin_turn() -> void:
-	if card.is_exhausted():
-		_end_run(false, "The Ledger is full. The run ends where you are standing.")
-		return
-	phase = Phase.TURN
-	floor_turn += 1
-	rerolls_left = Balance.rerolls_per_turn
-	turn_rolled = false
-	pool.begin_turn("player")
-	# The felt starts bare. Nothing is on it and nothing can be settled until
-	# you have thrown — the first draw of the turn is yours to make. Staked
-	# dice are the exception: they were sealed for the night and keep the face
-	# they were sealed on.
-	for die in pool.table:
-		# Holding is for the turn you are in, so a new turn releases them all.
-		die.held = false
-		if die.locked:
-			continue
-		die.value = 0
-		die.second_value = 0
-		die.zone = Throw.Zone.POT
-	# With every die staked there is nothing left to throw, so the faces on
-	# the felt are already the hand. Count the turn as drawn or the night
-	# deadlocks with no legal move.
-	if not can_throw():
-		turn_rolled = true
-	turn_started.emit()
+	var s := Shifts.get_shift(shift)
+	shift_title = s.title
+	phase = Phase.SHIFT_OPENING
+	_build_line(s)
+	index = -1
+	note("--- Shift %d: %s ---" % [shift, s.title])
+	note(s.opening)
+	if s.scripted != "":
+		note(s.scripted)
+	shift_started.emit(shift, s.title, s.opening)
 	state_changed.emit()
 
 
-## Throw strength is the main risk dial: soft never reaches the rail, hard
-## scatters wide and can put dice off the table for the rest of the floor.
-func throw(strength: int = -1) -> void:
-	if phase != Phase.TURN or dice_in_the_air:
+## Compose the night's line. The ratio is a target, not a guarantee: a shift
+## that is all things or all people would teach the wrong lesson, so both ends
+## are clamped away except on the last shift, which is one figure.
+func _build_line(s: Shifts.Shift) -> void:
+	line.clear()
+	if Shifts.is_final(s.number):
+		line.append(_make_final_figure())
 		return
-	# Every die kept back means the throw would change nothing. Spending a
-	# draw on it would be a pure loss, so it is refused instead.
-	if turn_rolled and throwable_dice() == 0:
-		return
-	if turn_rolled:
-		if rerolls_left <= 0:
-			return
-		rerolls_left -= 1
-	turn_rolled = true
-	if strength >= 0:
-		throw_strength = strength
-	if not can_throw():
-		return
-
-	# A die resting on the rail is shoved outward before anything new lands,
-	# whichever way the throw is resolved.
-	var pushed := ThrowContract.push_rail_dice(
-		pool.table, throw_strength, has_charm(&"long_throw"))
-	for die in pushed:
-		log_line("%s is shoved off the lip." % die.die_name)
-
-	throw_began.emit(throw_strength)
-	if stage != null:
-		dice_in_the_air = true
-		state_changed.emit()
-		stage.begin_throw(throw_strength, _throw_seeds.randi(),
-			kept_dice(), _thrown_ids())
-		return
-	last_throw = pool.throw_table(throw_strength, has_charm(&"long_throw"))
-	_finish_throw(pushed)
+	var count := rng.randi_range(Dread.TRAVELLERS_MIN, Dread.TRAVELLERS_MAX)
+	var things := int(round(float(count) * s.thing_ratio))
+	things = clampi(things, 1, count - 1)
+	for i in count:
+		line.append(_make_traveller(s, i < things))
+	_shuffle(line)
+	# The fifth shift sends one with no face and perfect answers. It is not
+	# a puzzle: it is the night the game stops pretending you can always win.
+	if s.number == FACELESS_SHIFT:
+		var faceless := _make_final_figure()
+		faceless.given_name = "(no name given)"
+		faceless.reason = "There is nothing written on the tag."
+		line.insert(mini(line.size(), line.size() / 2), faceless)
+	_seed_returns()
 
 
-## Which of the eight are on the table this turn, in order. The simulation
-## needs their identities, not five anonymous bodies.
-func _thrown_ids() -> Array:
-	var ids: Array = []
-	for die in pool.table:
-		if not die.lost:
-			ids.append(die.id)
-	return ids
+func _make_traveller(s: Shifts.Shift, is_thing: bool) -> Traveller:
+	var t := Traveller.new()
+	t.given_name = Names.pick(rng)
+	t.reason = Names.reason(rng)
+	t.portrait = rng.randi_range(0, Dread.PORTRAITS - 1)
+	t.is_thing = is_thing
+	if is_thing:
+		t.tells = Tells.roll(rng, rng.randi_range(s.tells_min, s.tells_max))
+	return t
 
 
-## Dice that are not being thrown — staked for the night or held for the
-## turn. The stage sets them down showing the face they already have.
-func kept_dice() -> Array:
-	var held: Array = []
-	for die in pool.table:
-		if die.kept() and not die.lost:
-			held.append({
-				"id": die.id,
-				"value": die.value,
-				"position": die.landing_position(),
-			})
-	return held
+## The last figure has your face and asks your questions. It is the only
+## traveller in the game whose answers are all correct.
+func _make_final_figure() -> Traveller:
+	var t := Traveller.new()
+	t.given_name = "—"
+	t.reason = "It is wearing your face."
+	t.portrait = -1
+	t.is_thing = true
+	t.tells = []
+	return t
 
 
-## Called by the stage once the bodies have settled. The faces, the zones and
-## the cocked dice are read off the table, not decided here.
-func apply_physical_throw(records: Array) -> void:
-	if not dice_in_the_air:
-		return
-	dice_in_the_air = false
-	var lost: Array[Die] = []
-	for entry in records:
-		var die := pool.get_die(int(entry["id"]))
-		if die == null or die.locked:
-			continue
-		var spot: Vector2 = entry["position"]
-		die.landing_radius = spot.length()
-		die.landing_angle = spot.angle()
-		die.zone = int(entry["zone"])
-		die.last_value = die.value
-		die.value = int(entry["value"])
-		die.repeated = die.value == die.last_value and die.value != 0
-		die.second_value = int(entry["second_value"])
-		die.cocked_on = die.id if die.second_value > 0 else -1
-		if entry["lost"] and not die.lost:
-			die.lost = true
-			lost.append(die)
-	var result := Throw.Result.new()
-	result.strength = throw_strength
-	result.lost = lost
-	for die in pool.table:
-		if die.second_value > 0:
-			result.cocked.append(die)
-	last_throw = result
-	_finish_throw(lost)
-
-
-func _finish_throw(lost: Array[Die]) -> void:
-	for c in charms:
-		c.on_roll(self)
-	log_line(last_throw.summary())
-	for c in last_throw.collisions:
-		log_line("  %s knocks %s from %d to %d." % c)
-	if not lost.is_empty():
-		dice_lost.emit(lost)
-	log_line("Table: %s" % pool.describe_table())
-	thrown.emit(last_throw)
-	state_changed.emit()
-
-
-## Kept for tests and tools that only care about faces, not physics.
-func roll() -> void:
-	throw()
-
-
-## Every die on the table is locked or gone: there is nothing to throw.
-## Draws left this turn, including the first one if it has not been made.
-func draws_left() -> int:
-	return rerolls_left + (0 if turn_rolled else 1)
-
-
-func can_throw() -> bool:
-	for d in pool.table:
-		if not d.locked and not d.lost:
-			return true
-	return false
-
-
-## Keep a die back from the next draw, for this turn only. Free, reversible,
-## and the reason a hand can be built toward a line at all — but a held die is
-## still on the felt, where a landing die can knock it to a new face.
-func toggle_hold(die: Die) -> void:
-	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
-		return
-	die.held = not die.held
-	state_changed.emit()
-
-
-func hold_die(die: Die, on: bool = true) -> void:
-	if phase != Phase.TURN or die.locked or die.lost or die.value == 0:
-		return
-	if die.held == on:
-		return
-	die.held = on
-	state_changed.emit()
-
-
-## Dice that would actually move if you threw now.
-func throwable_dice() -> int:
-	var n := 0
-	for d in pool.table:
-		if not d.kept() and not d.lost:
-			n += 1
-	return n
-
-
-## Locked is locked for the entire floor, not the turn.
-func lock_die(die: Die) -> void:
-	if phase != Phase.TURN or die.locked or die.value == 0:
-		return
-	die.held = false
-	pool.lock_die(die, "player")
-	for c in charms:
-		c.on_lock(self, die)
-	log_line("Staked %s on %d for the night." % [die.die_name, die.value])
-	state_changed.emit()
-
-
-## Dice on the table that are still free to throw: not locked, not lost.
-func free_dice_on_table() -> int:
-	var n := 0
-	for d in pool.table:
-		if not d.locked and not d.lost:
-			n += 1
-	return n
-
-
-## Locking every die on the table freezes the rest of the floor: the same
-## score, every turn, with no way to change it. Sometimes correct, never an
-## accident.
-func would_lock_out(die: Die) -> bool:
-	return not die.locked and free_dice_on_table() == 1
-
-
-func preview(box: int) -> int:
-	if not turn_rolled:
-		return 0
-	var values := table_values()
-	var base := int(round(Scoring.score(box, values) * Throw.rail_multiplier(pool.table)))
-	for c in charms:
-		base = c.modify_score(self, box, values, base)
-	return base
-
-
-## What the resolver reads: the dice on the table, after any charm that
-## changes how they are read (the Underhand takes a die's hidden face).
-func table_values() -> Array:
-	var values := pool.table_values()
-	for c in charms:
-		values = c.modify_values(self, values, pool.live_table())
-	return values
-
-
-## Write into a box. This is the turn: one roll, one box, gone for the run.
-func write_box(box: int) -> void:
-	if phase != Phase.TURN or not card.is_open(box):
-		return
-	# You settle a line against dice. Before the first throw there are none.
-	if not turn_rolled:
-		return
-	var values := table_values()
-	var value := preview(box)
-	var denied := adversary != null and box == adversary.declared_box
-	last_player_values = values.duplicate()
-	card.write_player(box, value)
-	player_wrote.emit(box, value, denied)
-	if denied:
-		log_line("Denied: you took %s out of %s's hands."
-			% [Scoring.box_name(box), adversary.display_name])
-		# The call is dead the moment the line is taken.
-		adversary.declared_box = -1
-	floor_score += value
-	if value == 0:
-		log_line("Struck out %s. A hole in the Ledger for the rest of the run." % Scoring.box_name(box))
-		_embitter_locked()
-	else:
-		log_line("%s for %d. (%d/%d tonight)" % [Scoring.box_name(box), value, floor_score, threshold])
-		_reward_locked_dice()
-	for c in charms:
-		for extra in c.extra_writes(self, box, values):
-			if card.is_open(extra[0]):
-				card.write_player(extra[0], extra[1])
-				floor_score += extra[1]
-				log_line("%s also fills %s for %d." % [c.charm_name, Scoring.box_name(extra[0]), extra[1]])
-	_burn_extra_boxes()
-	state_changed.emit()
-	_after_player_turn()
-
-
-func _after_player_turn() -> void:
-	if floor_score >= threshold:
-		_clear_floor()
-		return
-	if card.is_exhausted():
-		_end_run(false, "The Ledger is full on %s." % Lore.night(floor_number).to_lower())
-		return
-	if adversary != null:
-		_adversary_turn()
-		if phase == Phase.RUN_OVER:
-			return
-		if card.is_exhausted():
-			_end_run(false, "The Ledger is full on %s." % Lore.night(floor_number).to_lower())
-			return
-	begin_turn()
-
-
-func _adversary_turn() -> void:
-	var line := adversary.take_turn(self)
-	log_line(line)
-	adversary_acted.emit(line)
-	if card.adversary_count() >= Balance.adversary_card_limit:
-		_end_run(false, "%s has seven lines. He takes the Ledger." % adversary.display_name)
-		return
-	_adversary_declare()
-
-
-func _adversary_declare() -> void:
-	var box := adversary.declare(self)
-	if box < 0:
-		return
-	log_line("%s announces: %s." % [adversary.display_name, Scoring.box_name(box)])
-	adversary_declared.emit(box)
-
-
-func _clear_floor() -> void:
-	var reclaimed: Array = []
-	var earned := floor_score - floor_carry_in
-	if adversary != null:
-		if earned > adversary.duel_score:
-			reclaimed = card.reclaim(Balance.duel_reclaim)
-			log_line("You out-scored %s, %d to %d. %d boxes come back."
-				% [adversary.display_name, earned, adversary.duel_score, reclaimed.size()])
+## Someone you turned away comes back, two shifts later and worse for it.
+func _seed_returns() -> void:
+	var still_owed: Array = []
+	for owed in owed_returns:
+		if shift - int(owed["shift"]) >= Dread.GUILT_RETURN_AFTER and not line.is_empty():
+			var t: Traveller = line[rng.randi_range(0, line.size() - 1)]
+			t.returning = true
+			t.returning_as = String(owed["name"])
+			t.given_name = String(owed["name"])
+			note("%s is in the line again." % t.given_name)
 		else:
-			log_line("%s out-scored you, %d to %d. The burned boxes stay burned."
-				% [adversary.display_name, adversary.duel_score, earned])
-	log_line("%s cleared in %s. %s." % [Lore.night(floor_number), Lore.draws(floor_turn),
-		Lore.lines_owed(card.open_count())])
-	if adversary != null:
-		# The night is over; nothing is on call any more.
-		adversary.declared_box = -1
-	_bank_overflow()
-	if floor_number >= total_nights():
-		floor_cleared.emit(floor_number, reclaimed)
-		_end_run(true, "Twelve nights down with %s." % Lore.lines_owed(card.open_count()))
+			still_owed.append(owed)
+	owed_returns = still_owed
+
+
+func begin_shift() -> void:
+	if phase != Phase.SHIFT_OPENING:
 		return
-	# Phase first: listeners read it to decide whether to open the bench.
-	phase = Phase.BENCH
-	floor_cleared.emit(floor_number, reclaimed)
+	next_traveller()
+
+
+# --- Travellers --------------------------------------------------------------
+
+func next_traveller() -> void:
+	index += 1
+	if index >= line.size():
+		_end_shift()
+		return
+	current = line[index]
+	asks_left = Questions.ASKS_PER_TRAVELLER
+	asked_this_traveller.clear()
+	armed_seen_travellers += 1
+	phase = Phase.QUESTIONING
+	note("Next: %s — %s" % [current.given_name, current.reason])
+	if current.returning:
+		note("You have seen this face before.")
+	traveller_arrived.emit(current)
+	_ambient_for_arrival()
 	state_changed.emit()
 
 
-## Overshoot is not wasted. Scoring past the threshold banks the difference
-## toward the next floor, capped so a huge turn cannot skip a floor outright.
-func _bank_overflow() -> void:
-	var overflow := floor_score - threshold
-	if overflow <= 0:
+## Tells that fire on arrival rather than in an answer. These are the ones a
+## player catches by looking rather than asking, which is the only way the
+## three-question limit stays survivable.
+func _ambient_for_arrival() -> void:
+	if current == null or not current.is_thing:
 		return
-	var next_threshold := Balance.threshold_for_floor(floor_number + 1)
-	var cap := int(next_threshold * Balance.overflow_carry_cap)
-	pending_carry = mini(int(overflow * Balance.overflow_carry_ratio), cap)
-	if pending_carry <= 0:
+	if current.has_tell(Tells.Id.HUM_SHIFT):
+		_say("The room hum drops a tone as they step up.")
+	if current.has_tell(Tells.Id.LAGGING_GLASS):
+		_say("In the desk glass their reflection arrives a moment after they do.")
+	if current.has_tell(Tells.Id.WRONG_VOICE):
+		_say("When they clear their throat, the sound is not the right size for the face.")
+	if current.has_tell(Tells.Id.UNASKED):
+		var bank: Array = Tells.LINES[Tells.Id.UNASKED]
+		_say(String(bank[rng.randi_range(0, bank.size() - 1)]))
+	if current.has_tell(Tells.Id.KNOWS_YOU):
+		var bank2: Array = Tells.LINES[Tells.Id.KNOWS_YOU]
+		var line_text := String(bank2[rng.randi_range(0, bank2.size() - 1)])
+		if line_text.contains("%s"):
+			line_text = line_text % RunState.officer_name
+		_say(line_text)
+
+
+func _say(text: String) -> void:
+	note(text)
+	ambient.emit(text)
+
+
+# --- Asking ------------------------------------------------------------------
+
+func can_ask(question: int) -> bool:
+	if phase != Phase.QUESTIONING or current == null:
+		return false
+	if asks_left <= 0:
+		return false
+	return not asked_this_traveller.has(question)
+
+
+## Ask, listen. The answer is drawn once and kept: asking the same question
+## twice is a wasted ask, not a second sample.
+func ask(question: int) -> String:
+	if not can_ask(question):
+		return ""
+	asks_left -= 1
+	asked_this_traveller.append(question)
+	question_uses[question] = int(question_uses.get(question, 0)) + 1
+	_learn_from(question)
+
+	if Questions.is_trap(question):
+		human_question_used = true
+		_raise(Dread.ASK_TRAP_COST)
+
+	var worn := is_learned(question)
+	var reply: String = current.answered.get(question, "")
+	if reply == "":
+		reply = Questions.answer(question, current.is_thing, rng, current.given_name, worn)
+		current.answered[question] = reply
+	var tell := -1
+	if current.is_thing and not worn:
+		tell = question
+	# Repeating you back is a reply to whatever you just asked, so it lands
+	# here rather than on arrival.
+	if current.is_thing and current.has_tell(Tells.Id.ECHO) and rng.randf() < 0.5:
+		var echoes: Array = Tells.LINES[Tells.Id.ECHO]
+		reply = String(echoes[rng.randi_range(0, echoes.size() - 1)]) % Questions.ask_text(question)
+	note("Q: %s" % Questions.ask_text(question))
+	note("A: %s" % reply)
+	answered.emit(question, Questions.ask_text(question), reply, tell)
+	state_changed.emit()
+	return reply
+
+
+## Things learn. A question you have leant on twice stops catching anything
+## from shift three on — same question, same face, a person's answer.
+func _learn_from(question: int) -> void:
+	if shift < Dread.LEARNING_FROM_SHIFT:
 		return
-	log_line("Overshot by %d. %d carries to %s." % [overflow, pending_carry, Lore.night(floor_number + 1).to_lower()])
-
-
-## Turning the page. Thirteen lines have to carry seven nights, so the wipe is
-## the reward for surviving one — every line the Adversary took or burned
-## comes back with it.
-func _begin_week() -> void:
-	var wiped := card.new_week()
-	log_line("--- Week %d. Fresh paper: %d lines back. ---" % [week_number, wiped.size()])
-	week_started.emit(week_number, wiped)
-
-
-## Nights left in the current week, including tonight.
-func nights_left_in_week() -> int:
-	return Balance.nights_per_week - Balance.night_of(floor_number) + 1
-
-
-func leave_bench() -> void:
-	if phase != Phase.BENCH:
+	if learned.has(question):
 		return
-	next_floor()
+	if int(question_uses.get(question, 0)) >= Dread.USES_BEFORE_LEARNED:
+		learned.append(question)
+		note("They have heard that one before.")
 
 
-func take_charm(charm: Charm) -> void:
-	charms.append(charm)
-	charms_taken_this_week += 1
-	log_line("Charm taken: %s — %s" % [charm.charm_name, charm.text])
+func is_learned(question: int) -> bool:
+	return learned.has(question)
+
+
+# --- Deciding ----------------------------------------------------------------
+
+func decide(approve: bool) -> void:
+	if phase != Phase.QUESTIONING or current == null:
+		return
+	# Only approve works on the faceless one. Refusing is not on offer, and
+	# the stamp simply does not move — the rule lives here so the interface
+	# and the tests cannot disagree about it.
+	if current.is_faceless() and not approve:
+		note("The DENY stamp does not move.")
+		refused_deny.emit()
+		return
+	var correct := approve != current.is_thing
+	current.verdict = 1 if approve else 0
+	phase = Phase.DECIDED
+
+	if approve and current.is_thing:
+		things_let_through += 1
+		lights = maxi(0, lights - 1)
+		_raise(Dread.WRONG_APPROVE)
+		note("Approved. A light goes out in the safe-zone window.")
+		_roll_scare()
+	elif approve:
+		people_approved += 1
+		note("Approved.")
+	elif current.is_thing:
+		things_denied += 1
+		_raise(Dread.RIGHT_DENY)
+		note("Denied. It stares at you for a moment, and then it goes.")
+	else:
+		people_turned_away += 1
+		_raise(Dread.WRONG_DENY)
+		owed_returns.append({"name": current.given_name, "shift": shift})
+		note("Denied. They do not argue. That is worse.")
+
+	decided.emit(current, approve, correct)
+	state_changed.emit()
+	if _check_run_over():
+		return
+	next_traveller()
+
+
+func _raise(amount: int) -> void:
+	dread = clampi(dread + amount, Dread.MIN, Dread.MAX)
+
+
+# --- Scares ------------------------------------------------------------------
+
+## Arm, do not fire. The delay is the mechanism: by the time it lands the
+## player is reading someone else's face and has stopped bracing.
+func _roll_scare() -> void:
+	if armed_scare >= 0:
+		return
+	if rng.randf() >= Scares.chance(dread):
+		return
+	var options := Scares.all_ids()
+	# The comeback needs someone to come back as, and only one of the six
+	# can be spent on the outright question.
+	_shuffle(options)
+	armed_scare = options[0]
+	armed_at = _clock + Scares.delay(rng)
+	armed_seen_travellers = 0
+	scare_armed.emit(armed_scare, armed_at - _clock)
+
+
+## Called every frame by the scene, and stepped directly in tests.
+func tick(delta: float) -> void:
+	_clock += delta
+	if armed_scare < 0 or _clock < armed_at:
+		return
+	# Never from the traveller who caused it. It waits for the next face.
+	if armed_seen_travellers < 1:
+		return
+	var scare := armed_scare
+	armed_scare = -1
+	note(Scares.copy_for(scare))
+	scare_fired.emit(scare, Scares.copy_for(scare))
 	state_changed.emit()
 
 
-func has_charm(charm_id: StringName) -> bool:
-	for c in charms:
-		if c.id == charm_id:
-			return true
+func scare_pending() -> bool:
+	return armed_scare >= 0
+
+
+# --- Endings -----------------------------------------------------------------
+
+func _end_shift() -> void:
+	phase = Phase.SHIFT_OVER
+	note("Shift %d ends. %d %s still lit." % [shift, lights,
+		"light" if lights == 1 else "lights"])
+	shift_ended.emit(shift)
+	state_changed.emit()
+	if _check_run_over():
+		return
+	if shift >= Shifts.count():
+		_finish_run()
+
+
+func _check_run_over() -> bool:
+	if things_let_through >= Dread.EMPTIED_AT:
+		_end(Ending.EMPTIED_THE_ZONE,
+			"The window is dark. The last one in the line has your family's faces.")
+		return true
+	if people_turned_away >= Dread.TURNED_AWAY_AT:
+		_end(Ending.TURNED_EVERYONE_AWAY,
+			"There is no line any more. Behind you, the booth door opens.")
+		return true
 	return false
 
 
-## Dice locked into a scoring box level up; three scores reshapes a face.
-func _reward_locked_dice() -> void:
-	for d in pool.table:
-		if not d.locked:
-			continue
-		if d.note_scored():
-			log_line("%s reshapes a face: %s" % [d.die_name, str(Array(d.faces))])
+func _finish_run() -> void:
+	_end(Ending.KEPT_THE_LINE,
+		"The last figure answered every question the way you would have. You stamped it through. You do not know which of you walked away.")
 
 
-## Dice used in a scratched box turn bitter.
-func _embitter_locked() -> void:
-	for d in pool.table:
-		if d.locked and not d.bitter:
-			d.embitter()
-			log_line("%s turns bitter." % d.die_name)
-
-
-func _burn_extra_boxes() -> void:
-	var extra := 0
-	for c in charms:
-		extra += c.extra_boxes_per_turn()
-	for _i in extra:
-		var open_now := card.open_boxes()
-		if open_now.is_empty():
-			return
-		var cheapest: int = open_now[0]
-		for box in open_now:
-			if Scoring.score(box, [1, 1, 1, 1, 1]) < Scoring.score(cheapest, [1, 1, 1, 1, 1]):
-				cheapest = box
-		card.burn(cheapest)
-		log_line("Blood Pact burns %s." % Scoring.box_name(cheapest))
-
-
-func _end_run(won: bool, reason: String) -> void:
+func _end(which: int, reason: String) -> void:
+	if phase == Phase.RUN_OVER:
+		return
 	phase = Phase.RUN_OVER
-	victory = won
+	ending = which
 	end_reason = reason
-	log_line(reason)
-	log_line("Run total: %d over %d floors." % [card.run_total, floor_number])
-	run_ended.emit(won, reason)
+	note(reason)
+	run_ended.emit(ending_id(), reason)
 	state_changed.emit()
 
 
-func log_line(line: String) -> void:
-	log_lines.append(line)
-	if log_lines.size() > 200:
+func ending_id() -> StringName:
+	match ending:
+		Ending.KEPT_THE_LINE:
+			return &"kept_the_line"
+		Ending.EMPTIED_THE_ZONE:
+			return &"emptied_the_zone"
+		Ending.TURNED_EVERYONE_AWAY:
+			return &"turned_everyone_away"
+	return &"none"
+
+
+## No score is shown at the end. This is what the game knows.
+func tally() -> Dictionary:
+	return {
+		"things_let_through": things_let_through,
+		"people_turned_away": people_turned_away,
+		"things_denied": things_denied,
+		"people_approved": people_approved,
+		"lights": lights,
+		"shift": shift,
+	}
+
+
+func note(text: String) -> void:
+	log_lines.append(text)
+	if log_lines.size() > 300:
 		log_lines.remove_at(0)
-	log_emitted.emit(line)
+
+
+func _shuffle(array: Array) -> void:
+	for i in range(array.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = array[i]
+		array[i] = array[j]
+		array[j] = tmp
