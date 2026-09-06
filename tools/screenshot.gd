@@ -1,5 +1,5 @@
 extends Node
-## The booth at each of the moments that matter.
+## The shop at the moments that matter.
 ##   xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots
 
 var _dir := "."
@@ -16,80 +16,89 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await _shot("01_title")
 
-	_press("Begin")
-	await get_tree().process_frame
-	await _shot("02_shift_opening")
+	_press("Open the shop")
+	await _settle(6)
+	await _shot("02_level1_empty")
 
-	_press("Open")
-	for _i in 4:
-		await get_tree().process_frame
-	# Force the painted face for the shot, so the art path is always in the
-	# set rather than left to the roll.
-	var g: Game = _main.game
-	if g.current != null and Portraits.painted() > 0:
-		g.current.portrait = 0
-		_main._portrait.show_traveller(g.current)
-		for _i in 3:
-			await get_tree().process_frame
-	await _shot("03_first_traveller")
+	# Play the shop: dispatch, stock, sell.
+	var world: World = _main.world
+	for _round in 6:
+		while world.thralls.can_dispatch():
+			world.dispatch_thrall()
+		await _run(31.0)
+		await _stock_everything(world)
+		await _run(24.0)
+	await _shot("03_level1_trading")
 
-	# Ask two, so the transcript has something in it.
-	var asked := 0
-	for button in _main._question_buttons:
-		if asked >= 2:
-			break
-		if not button.disabled:
-			button.pressed.emit()
-			asked += 1
-	for _i in 3:
-		await get_tree().process_frame
-	await _shot("04_questioning")
+	# Buy the expansion.
+	world.obols = maxi(world.obols, Balance.expansion_cost)
+	await _settle(3)
+	_main._on_expand()
+	await _settle(3)
+	await _shot("04_expanded")
+	_main._overlay.visible = false
+	await _settle(3)
 
-	# Wave everything through until the window is dark and the lamp closes in.
-	var game: Game = _main.game
-	var guard := 0
-	while guard < 60 and game.phase != Game.Phase.RUN_OVER:
-		guard += 1
-		if _main._overlay.visible:
-			_press_any()
-			await get_tree().process_frame
-			continue
-		if game.phase == Game.Phase.QUESTIONING:
-			_main._approve.pressed.emit()
-		await get_tree().process_frame
-		if game.things_let_through >= 3:
-			break
-	for _i in 3:
-		await get_tree().process_frame
-	await _shot("05_lights_going_out")
+	# Trade at level 2 until something turns.
+	for _round in 5:
+		while world.thralls.can_dispatch():
+			world.dispatch_thrall()
+		await _run(31.0)
+		await _stock_everything(world)
+		await _run(18.0)
+	await _shot("05_level2_trading")
 
-	# Force a scare so the framing can be checked.
-	game.armed_scare = Scares.Id.LEAN_IN
-	game.armed_at = 0.0
-	game.armed_seen_travellers = 2
-	game.tick(1.0)
-	for _i in 3:
-		await get_tree().process_frame
-	await _shot("06_scare")
+	# Let a floor go bad on purpose.
+	for key in world.shop.displays:
+		for unit in world.shop.displays[key]:
+			if Goods.perishable(unit.id):
+				unit.age = Goods.shelf_life(unit.id) + 1.0
+	world.corruption = Balance.corruption_cap * 0.7
+	await _run(2.0)
+	await _shot("06_corrupted")
 	get_tree().quit(0)
+
+
+## Drive the sim forward in real steps, and let the view draw.
+func _run(seconds: float) -> void:
+	var left := seconds
+	while left > 0.0:
+		_main.world.tick(0.1)
+		left -= 0.1
+		if fmod(left, 1.0) < 0.1:
+			await get_tree().process_frame
+	await get_tree().process_frame
+
+
+func _stock_everything(world: World) -> void:
+	for at_index in world.shop.display_indices():
+		var at := world.shop.position_of(at_index)
+		while world.shop.stock_at(at).size() < Shop.TABLE_CAPACITY:
+			if not world.take_from_backroom():
+				return
+			world.player = Vector2(at)
+			world.place_carried(at)
+	await get_tree().process_frame
+
+
+func _settle(frames: int) -> void:
+	for _i in frames:
+		await get_tree().process_frame
 
 
 func _press(prefix: String) -> bool:
 	for child in _main._overlay_body.get_children():
-		if child is Button and child.text.begins_with(prefix) and not child.disabled:
+		if child is Button and child.text.begins_with(prefix):
 			child.pressed.emit()
 			return true
 	return false
 
 
-func _press_any() -> void:
-	for child in _main._overlay_body.get_children():
-		if child is Button and not child.disabled:
-			child.pressed.emit()
-			return
-
-
 func _shot(shot_name: String) -> void:
+	# An audit can fire mid-run; the shot is of the shop, not of a dialogue.
+	if _main._overlay.visible and shot_name != "01_title":
+		_main._overlay.visible = false
+		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/%s.png" % [_dir, shot_name])
 	print("wrote %s" % shot_name)

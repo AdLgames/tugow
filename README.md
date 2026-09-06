@@ -1,12 +1,10 @@
-# Checkpoint
+# Abyssal Bazaar
 
-*Check who's in line. Don't look behind you.*
+A cozy little shop in a clearing. The trees bleed sap and the counter is an
+altar. Send thralls into the woods, put what they bring back on the tables,
+and watch the number go up.
 
-A short horror game about a checkpoint into the safe zone. There are no
-papers to check. You ask up to three questions, you listen, and you decide who
-comes in. Some of them are not people, and none of them will tell you.
-
-Godot 4.4, GL Compatibility, 1920x1080.
+Godot 4.4, GL Compatibility, 1600x1000, sized for a thumb.
 
 ## Running it
 
@@ -16,12 +14,10 @@ Godot 4.4, GL Compatibility, 1920x1080.
 
     GODOT=/path/to/godot tools/run_tests.sh
 
-- `tests/tests.gd` — the rules, including the two the design leans on hardest:
-  that a scare never fires on the traveller that caused it, and that questions
-  wear out once you lean on them.
-- `tests/invariants.gd` — property fuzz. Plays the booth badly, at random,
-  hundreds of times, and checks what must be true at every moment rather than
-  the outcome of any one run.
+- `tests/tests.gd` — the rules.
+- `tests/invariants.gd` — property fuzz: runs the shop badly, at random, 160
+  times, and checks what must hold at every tick rather than the outcome of
+  any run.
 - `tests/ui_smoke.gd` — plays the real scene through the real buttons.
   Needs a display: `xvfb-run godot --path . res://tests/ui_smoke.tscn`
 
@@ -31,13 +27,19 @@ Godot 4.4, GL Compatibility, 1920x1080.
 
 ## Where things are
 
+The sim knows nothing about the screen. It advances by `tick(delta)` with a
+seeded generator and no reference to frames, real time or the scene tree,
+which is what lets the whole game run thousands of times headlessly while the
+view does nothing but draw what it finds.
+
 | | |
 |---|---|
-| `scripts/core/questions.gd` | The eight questions and both shapes of every answer |
-| `scripts/core/tells.gd` | The seven tells |
-| `scripts/core/scares.gd` | The six scares and the rules about when one may happen |
-| `scripts/core/game.gd` | The booth: asking, deciding, dread, arming a scare |
-| `scripts/core/shifts.gd` | Seven shifts, and what each one takes away from you |
-| `scripts/autoload/dread.gd` | Every tunable number |
-| `docs/DESIGN.md` | Why the scare is late, and what the interface refuses to tell you |
-| `docs/ASSETS.md` | What is drawn in code and what a painter would replace |
+| `scripts/sim/world.gd` | The shop, running. Everything goes through `tick`. |
+| `scripts/sim/shop.gd` | The floor: what is where, and what is on it |
+| `scripts/sim/goods.gd` | The four goods, and what does not keep |
+| `scripts/sim/thralls.gd` | The deck, and what is out in the woods |
+| `scripts/sim/customers.gd` | Someone off the path |
+| `scripts/autoload/balance.gd` | Every tunable number |
+| `scripts/ui/world_view.gd` | The floor, drawn three-quarter top-down |
+| `scripts/ui/stock_panel.gd` | What you have and how long you have it for |
+| `docs/DESIGN.md` | Why the deck is a concurrency limit, and what rot is for |

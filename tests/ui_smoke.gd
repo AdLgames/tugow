@@ -1,86 +1,113 @@
 extends Node
-## Plays the real scene through the real buttons. Outcome tests pass on a game
-## that cannot be clicked; this one presses what a player presses.
+## Plays the real scene through the real controls. Outcome tests pass on a
+## shop nobody can tap; this one presses what a thumb presses.
 
 var _main: Control
 var _failed: Array[String] = []
-var _asked := 0
-var _decided := 0
-var _unrefusable := 0
+var _dispatched := 0
+var _placed := 0
 
 
 func _ready() -> void:
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	await get_tree().process_frame
-	if not _press("Begin"):
+	if not _press("Open the shop"):
 		_fail("no way into the game")
 		return _report()
 	await get_tree().process_frame
 
-	var guard := 0
-	while guard < 400:
-		guard += 1
-		var game: Game = _main.game
-		if game == null:
-			_fail("the run never started")
-			break
-		if game.phase == Game.Phase.RUN_OVER:
-			break
-		if _main._overlay.visible:
-			if not _press_any():
-				_fail("an overlay with no way out")
-				break
-			await get_tree().process_frame
-			continue
-		if game.phase != Game.Phase.QUESTIONING:
-			await get_tree().process_frame
-			continue
-		# Ask two, then decide honestly, so the run reaches the last shift.
-		var asked_here := 0
-		for button in _main._question_buttons:
-			if asked_here >= 2:
-				break
+	var world: World = _main.world
+	_check(world != null, "the shop opens")
+
+	# Level 1: play thralls, stock what comes back, sell it.
+	for _round in 8:
+		for button in _main._card_buttons:
 			if not button.disabled:
 				button.pressed.emit()
-				_asked += 1
-				asked_here += 1
-		_check(game.asks_left == Questions.ASKS_PER_TRAVELLER - asked_here,
-			"asks are spent by pressing the buttons")
-		# Denying the faceless ones does nothing, so the honest play is to
-		# approve them and take the light.
-		var truth: bool = (not game.current.is_thing) or game.current.is_faceless()
-		if game.current.is_faceless():
-			_unrefusable += 1
-		(_main._approve if truth else _main._deny).pressed.emit()
-		_decided += 1
-		await get_tree().process_frame
+				_dispatched += 1
+		await _run(31.0)
+		await _stock_via_ui(world)
+		await _run(20.0)
 
-	var final: Game = _main.game
-	_check(final != null and final.phase == Game.Phase.RUN_OVER, "the run reaches an ending")
-	_check(_asked > 10, "questions were actually asked (%d)" % _asked)
-	_check(_decided > 10, "decisions were actually made (%d)" % _decided)
-	_check(final != null and final.ending_id() == &"kept_the_line",
-		"playing it correctly keeps the line")
-	_check(_unrefusable > 0, "and meets something it is not allowed to refuse")
-	_check(final.lights == Dread.WINDOW_LIGHTS - _unrefusable,
-		"costing exactly the lights it could not refuse, and no others")
-	print("UI smoke: %d questions, %d decisions, shift %d, %d lights."
-		% [_asked, _decided, final.shift, final.lights])
+	_check(_dispatched > 0, "thrall cards can be played (%d)" % _dispatched)
+	_check(_placed > 0, "stock can be put on tables (%d)" % _placed)
+	_check(world.sales > 0, "and it sells (%d)" % world.sales)
+	_check(world.obols > Balance.starting_obols, "the counter goes up")
+
+	# The expand button is the whole point of level 1.
+	world.obols = maxi(world.obols, Balance.expansion_cost)
+	_main._refresh()
+	_check(not _main._expand_button.disabled, "the expansion unlocks when you can pay")
+	_main._expand_button.pressed.emit()
+	await get_tree().process_frame
+	_check(world.level == 2, "and pressing it takes you to level 2")
+	_main._overlay.visible = false
+
+	# Level 2: the panels that only exist here.
+	_main._refresh()
+	_check(_main._corruption_bar.visible, "level 2 shows corruption")
+	_check(_main._case_button.visible, "and sells display cases")
+
+	# Tapping the floor walks; tapping a table with something in hand places it.
+	# Find real floor rather than assuming: the aisles move with the layout,
+	# and tapping a table is meant to walk you beside it instead.
+	var spot := Vector2i(-1, -1)
+	for y in range(2, world.shop.size - 2):
+		for x in range(2, world.shop.size - 2):
+			if world.shop.get_cell(Vector2i(x, y)) == Shop.Cell.FLOOR:
+				spot = Vector2i(x, y)
+				break
+		if spot.x >= 0:
+			break
+	_check(spot.x >= 0, "the floor has somewhere to stand")
+	_main._on_tile_tapped(spot)
+	_check(world.player_target == spot, "tapping the floor walks you there")
+
+	# And tapping a table walks you to its side rather than into it.
+	var table := world.shop.position_of(world.shop.display_indices()[0])
+	_main._on_tile_tapped(table)
+	_check(world.player_target != table, "tapping a table does not walk you into it")
+	_check(world.shop.walkable(world.player_target), "it walks you beside it")
+
+	await _run(45.0)
+	_check(world.tribute_owed >= 0, "tribute accrues without going negative")
+	print("UI smoke: %d dispatched, %d placed, %d sold, %d obols, level %d."
+		% [_dispatched, _placed, world.sales, world.obols, world.level])
 	_report()
+
+
+func _run(seconds: float) -> void:
+	var left := seconds
+	while left > 0.0:
+		_main.world.tick(0.1)
+		left -= 0.1
+	await get_tree().process_frame
+
+
+## Take from the back and place, the way a player does: through the button
+## and a tap on a table.
+func _stock_via_ui(world: World) -> void:
+	for index in world.shop.display_indices():
+		var at := world.shop.position_of(index)
+		while world.shop.stock_at(at).size() < Shop.TABLE_CAPACITY:
+			if world.shop.backroom.is_empty():
+				return
+			_main._take_button.pressed.emit()
+			if world.carrying == null:
+				return
+			# Walking is real, so stand beside it before tapping.
+			world.player = Vector2(world.shop.approach_to(at))
+			_main._on_tile_tapped(at)
+			if world.carrying != null:
+				return
+			_placed += 1
+	await get_tree().process_frame
 
 
 func _press(prefix: String) -> bool:
 	for child in _main._overlay_body.get_children():
-		if child is Button and child.text.begins_with(prefix) and not child.disabled:
-			child.pressed.emit()
-			return true
-	return false
-
-
-func _press_any() -> bool:
-	for child in _main._overlay_body.get_children():
-		if child is Button and not child.disabled:
+		if child is Button and child.text.begins_with(prefix):
 			child.pressed.emit()
 			return true
 	return false

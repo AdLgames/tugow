@@ -1,127 +1,125 @@
 extends Node
-## Property fuzz. Plays the booth badly, at random, thousands of times, and
-## checks the things that must be true at every single moment rather than the
-## outcome of any one run.
+## Property fuzz. Runs the shop badly — dispatching at random, stocking at
+## random, never sweeping, expanding when it can — hundreds of times, and
+## checks what must be true at every tick rather than the outcome of any run.
 ##
-## Outcome tests pass on a game that is unplayable. These are the ones that
-## catch a rule quietly contradicting another rule.
+## Outcome tests pass on a shop that quietly loses stock. These are the ones
+## that catch a unit falling out of the world.
 
-const RUNS := 240
-const MAX_ACTIONS := 400
+const RUNS := 160
+const TICKS := 1600
+const DT := 0.2
 
 var _checks := 0
 var _failures: Array[String] = []
 
 
 func _ready() -> void:
-	var actions := 0
+	var ticks := 0
 	for seed_value in RUNS:
-		actions += _fuzz(seed_value)
-	print("  %d actions fuzzed across %d runs" % [actions, RUNS])
+		ticks += _fuzz(seed_value)
+	print("  %d ticks fuzzed across %d shops" % [ticks, RUNS])
 	_report()
 
 
 func _fuzz(seed_value: int) -> int:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value * 7717 + 13
-	var game := Game.new()
-	game.start_run(seed_value)
-	var actions := 0
-	var guard := 0
-	while game.phase != Game.Phase.RUN_OVER and guard < MAX_ACTIONS:
-		guard += 1
-		_hold(game, "seed %d" % seed_value)
-		match game.phase:
-			Game.Phase.SHIFT_OPENING:
-				game.begin_shift()
-			Game.Phase.SHIFT_OVER:
-				game.next_shift()
-			Game.Phase.QUESTIONING:
-				actions += 1
-				# Ask a random legal question, sometimes; decide at random.
-				if rng.randf() < 0.6:
-					var ids := Questions.all_ids()
-					var pick: int = ids[rng.randi_range(0, ids.size() - 1)]
-					var before := game.asks_left
-					var reply := game.ask(pick)
-					if reply != "":
-						_expect(game.asks_left == before - 1,
-							"seed %d: an answered question spent an ask" % seed_value)
-				if rng.randf() < 0.45:
-					game.decide(rng.randf() < 0.5)
-				# Let the clock run, so armed scares actually land mid-play.
-				game.tick(rng.randf_range(0.0, 9.0))
-			_:
-				break
-	_hold(game, "seed %d end" % seed_value)
-	return actions
+	rng.seed = seed_value * 6011 + 7
+	var world := World.new()
+	world.start(seed_value)
+	var tag := "seed %d" % seed_value
+
+	for i in TICKS:
+		# Play badly and at random.
+		if rng.randf() < 0.10:
+			world.dispatch_thrall()
+		if rng.randf() < 0.12 and world.carrying == null:
+			world.take_from_backroom()
+		if rng.randf() < 0.12 and world.carrying != null:
+			var spots := world.shop.display_indices()
+			var at := world.shop.position_of(spots[rng.randi_range(0, spots.size() - 1)])
+			# Placing needs you to be standing beside it, so walk there first.
+			world.player = Vector2(at)
+			world.place_carried(at)
+		if rng.randf() < 0.02:
+			world.sweep()
+		if rng.randf() < 0.01:
+			world.buy_card()
+		if world.can_expand() and rng.randf() < 0.3:
+			world.expand()
+		if world.level >= 2 and rng.randf() < 0.01:
+			var spots2 := world.shop.display_indices()
+			world.buy_case(world.shop.position_of(spots2[rng.randi_range(0, spots2.size() - 1)]))
+		world.tick(DT)
+		_hold(world, tag)
+	_hold(world, tag + " end")
+	return TICKS
 
 
-## Everything that must be true whatever has happened.
-func _hold(game: Game, tag: String) -> void:
-	_expect(game.dread >= Dread.MIN and game.dread <= Dread.MAX,
-		"%s: dread %d is outside its range" % [tag, game.dread])
-	_expect(game.lights >= 0 and game.lights <= Dread.WINDOW_LIGHTS,
-		"%s: %d lights" % [tag, game.lights])
+func _hold(world: World, tag: String) -> void:
+	# Money is never negative, and revenue only ever goes up.
+	_expect(world.obols >= 0, "%s: %d obols" % [tag, world.obols])
+	_expect(world.revenue >= 0, "%s: revenue %d" % [tag, world.revenue])
 
-	# A light is out for every thing let through, and for nothing else. This
-	# is the only readout the player gets, so it must never lie.
-	_expect(game.lights == maxi(0, Dread.WINDOW_LIGHTS - game.things_let_through),
-		"%s: %d lights against %d let through" % [tag, game.lights, game.things_let_through])
+	# Corruption stays inside its range, and the multiplier inside its.
+	_expect(world.corruption >= 0.0 and world.corruption <= Balance.corruption_cap,
+		"%s: corruption %.1f" % [tag, world.corruption])
+	var mult := world.revenue_multiplier()
+	_expect(mult >= Balance.corruption_worst and mult <= Balance.price_multiplier,
+		"%s: multiplier %.2f" % [tag, mult])
 
-	_expect(game.asks_left >= 0 and game.asks_left <= Questions.ASKS_PER_TRAVELLER,
-		"%s: %d asks left" % [tag, game.asks_left])
-	_expect(game.asked_this_traveller.size() <= Questions.ASKS_PER_TRAVELLER,
-		"%s: more questions asked than allowed" % tag)
+	# The deck is a concurrency limit: never more thralls out than cards, and
+	# a card is never destroyed by playing it.
+	_expect(world.thralls.out.size() <= world.thralls.deck,
+		"%s: %d thralls out on a deck of %d"
+		% [tag, world.thralls.out.size(), world.thralls.deck])
+	_expect(world.thralls.ready_cards() >= 0, "%s: negative hand" % tag)
+	_expect(world.thralls.deck >= Balance.starting_deck
+		and world.thralls.deck <= Balance.max_deck,
+		"%s: deck of %d" % [tag, world.thralls.deck])
 
-	# No question is asked twice of the same face.
-	var seen := {}
-	for q in game.asked_this_traveller:
-		_expect(not seen.has(q), "%s: question %d asked twice" % [tag, q])
-		seen[q] = true
+	# No table ever holds more than a table holds.
+	for key in world.shop.displays:
+		_expect(world.shop.displays[key].size() <= Shop.TABLE_CAPACITY,
+			"%s: a display holds %d" % [tag, world.shop.displays[key].size()])
 
-	# Every thing you are allowed to refuse is catchable: at least two tells,
-	# all distinct. The faceless ones are the deliberate exception — they have
-	# none, and DENY does not work on them, so there is nothing to catch.
-	for t in game.line:
-		if not t.is_thing or t.is_faceless():
-			continue
-		_expect(t.tells.size() >= Tells.PER_THING_MIN,
-			"%s: a thing has only %d tells" % [tag, t.tells.size()])
-		var tell_seen := {}
-		for tell in t.tells:
-			_expect(not tell_seen.has(tell), "%s: a tell is doubled" % tag)
-			tell_seen[tell] = true
+	# Everything on the floor is a real good, and a rotted unit is fully aged.
+	for key in world.shop.displays:
+		for unit in world.shop.displays[key]:
+			_expect(Goods.TABLE.has(unit.id), "%s: an unknown thing is on a table" % tag)
+			if unit.rotted:
+				_expect(Goods.perishable(unit.id),
+					"%s: something that keeps has turned" % tag)
 
-	# The run cannot be over and still be taking decisions.
-	if game.phase == Game.Phase.RUN_OVER:
-		_expect(game.ending_id() != &"none", "%s: the run ended with no ending" % tag)
-		_expect(game.end_reason != "", "%s: the run ended without saying why" % tag)
+	# Nothing that keeps ever turns, however long the shop runs.
+	for unit in world.shop.backroom:
+		if not Goods.perishable(unit.id):
+			_expect(not unit.rotted, "%s: bone turned in the back" % tag)
 
-	# A faceless traveller is never refusable and never has tells; nothing
-	# else may be faceless.
-	for t in game.line:
-		if t.is_faceless():
-			_expect(t.is_thing, "%s: a faceless traveller that is a person" % tag)
-			_expect(t.tells.is_empty(), "%s: a faceless traveller carrying tells" % tag)
+	# Customers are always somewhere real and holding something real.
+	for c in world.customers:
+		_expect(c.state >= Customer.State.ENTERING and c.state <= Customer.State.GONE,
+			"%s: a customer is in state %d" % [tag, c.state])
+		_expect(c.at.x >= -1.0 and c.at.y >= -1.0
+			and c.at.x <= float(world.shop.size) and c.at.y <= float(world.shop.size),
+			"%s: a customer is outside the shop at %s" % [tag, c.at])
+		if c.carrying != null:
+			_expect(Goods.TABLE.has(c.carrying.id),
+				"%s: a customer is holding an unknown thing" % tag)
+			_expect(not c.carrying.rotted, "%s: a customer picked up rot" % tag)
 
-	# Counts reconcile: every decided traveller is in exactly one tally.
-	var decided := 0
-	for t in game.line:
-		if t.verdict >= 0:
-			decided += 1
-	_expect(decided <= game.line.size(), "%s: more decisions than travellers" % tag)
+	# The level and the floor agree about how big the shop is.
+	_expect(world.shop.size == Balance.grid_size[world.level],
+		"%s: level %d on a floor of %d" % [tag, world.level, world.shop.size])
 
-	# An armed scare always has a future time on it, and is a real scare.
-	if game.armed_scare >= 0:
-		_expect(Scares.all_ids().has(game.armed_scare),
-			"%s: armed with scare %d" % [tag, game.armed_scare])
+	# Sales and lost sales are only ever counted forward.
+	_expect(world.sales >= 0 and world.lost_sales >= 0,
+		"%s: negative sales" % tag)
 
-	# Learning only ever happens from shift three, and only to real questions.
-	for q in game.learned:
-		_expect(Questions.all_ids().has(q), "%s: learned a question that does not exist" % tag)
-		_expect(game.shift >= Dread.LEARNING_FROM_SHIFT,
-			"%s: something was learned on shift %d" % [tag, game.shift])
+	# Level 1 never owes tribute, because the Void has not noticed it yet.
+	if world.level == 1:
+		_expect(world.tribute_owed == 0,
+			"%s: tribute owed before the Void was watching" % tag)
 
 
 func _expect(condition: bool, message: String) -> void:

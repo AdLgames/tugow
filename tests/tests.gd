@@ -1,391 +1,336 @@
 extends Node
-## Checks on the rules. The scare timing and the learning rule are the two
-## things the design leans on hardest, so they get the most attention.
+## The rules. The sim is deterministic and steps by delta, so a whole shop
+## day runs here in milliseconds and none of it needs a window.
 
 var _passed := 0
 var _failed: Array[String] = []
 
 
 func _ready() -> void:
-	_test_question_pool()
-	_test_answers_differ()
-	_test_asking_is_limited()
-	_test_repeat_question_is_wasted()
-	_test_trap_costs_you()
-	_test_tells()
-	_test_line_composition()
-	_test_decisions()
-	_test_lights()
-	_test_scare_never_from_current_speaker()
-	_test_scare_chance_rises()
-	_test_things_learn()
-	_test_denied_people_return()
-	_test_endings()
-	_test_faceless()
-	_test_final_shift()
+	_test_goods()
+	_test_shop_layout()
+	_test_every_display_is_reachable()
+	_test_placing()
+	_test_deck_is_a_concurrency_limit()
+	_test_haul_returns()
+	_test_spoilage()
+	_test_corruption()
+	_test_a_sale()
+	_test_empty_shop_turns_people_away()
+	_test_nobody_buys_rot()
+	_test_expansion_keeps_the_stock()
+	_test_cases_restock_themselves()
+	_test_audit()
+	_test_determinism()
 	_report()
 
 
-# --- Questions ---------------------------------------------------------------
+# --- Goods -------------------------------------------------------------------
 
-func _test_question_pool() -> void:
-	check(Questions.all_ids().size() == 8, "there are eight questions")
-	for id in Questions.all_ids():
-		check(Questions.ask_text(id) != "", "question %d has text" % id)
-		var row: Dictionary = Questions.POOL[id]
-		check(not Array(row["human"]).is_empty(), "question %d has human answers" % id)
-		check(not Array(row["thing"]).is_empty(), "question %d has thing answers" % id)
-
-
-## Every question has to separate the two, or it is not a question.
-func _test_answers_differ() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 5
-	for id in Questions.all_ids():
-		var human_bank: Array = Questions.POOL[id]["human"]
-		var thing_bank: Array = Questions.POOL[id]["thing"]
-		var overlap := false
-		for h in human_bank:
-			if thing_bank.has(h):
-				overlap = true
-		check(not overlap, "question %d: no answer is on both lists" % id)
+func _test_goods() -> void:
+	check(Goods.all_ids().size() == 4, "there are four goods")
+	check(Goods.for_tier(1).size() == 2, "level 1 stocks two of them")
+	check(Goods.for_tier(2).size() == 4, "level 2 stocks all four")
+	for id in Goods.all_ids():
+		check(Goods.price(id) > 0, "%s has a price" % Goods.good_name(id))
+		check(Goods.blurb(id) != "", "%s has a blurb" % Goods.good_name(id))
+	# The whole level 2 pivot is that the good stuff does not keep.
+	for id in Goods.for_tier(1):
+		check(not Goods.perishable(id), "%s keeps" % Goods.good_name(id))
+	for id in Goods.all_ids():
+		if Goods.for_tier(1).has(id):
+			continue
+		check(Goods.perishable(id), "%s does not keep" % Goods.good_name(id))
+		check(Goods.price(id) > 100, "%s is worth the trouble" % Goods.good_name(id))
 
 
-func _test_asking_is_limited() -> void:
-	var game := _running_game(101)
-	check(game.asks_left == Questions.ASKS_PER_TRAVELLER, "three asks to start")
-	var ids := Questions.all_ids()
-	game.ask(ids[0])
-	game.ask(ids[1])
-	game.ask(ids[2])
-	check(game.asks_left == 0, "three asks and no more")
-	check(game.ask(ids[3]) == "", "a fourth ask gives nothing")
+# --- The floor ---------------------------------------------------------------
+
+func _test_shop_layout() -> void:
+	var shop := Shop.new(8)
+	check(shop.size == 8, "level 1 is eight across")
+	check(shop.get_cell(shop.altar) == Shop.Cell.ALTAR, "the counter is an altar")
+	check(shop.get_cell(shop.door) == Shop.Cell.DOOR, "and there is a way in")
+	check(not shop.display_indices().is_empty(), "there are tables to stock")
+	for x in shop.size:
+		check_quiet(shop.get_cell(Vector2i(x, 0)) == Shop.Cell.WALL, "the shop is walled")
+	check(true, "the shop is walled in")
+
+	var big := Shop.new(16)
+	check(big.display_indices().size() > shop.display_indices().size(),
+		"the expansion is more room, not just more floor")
+	var has_backroom := false
+	for i in big.cells.size():
+		if big.cells[i] == Shop.Cell.BACKROOM:
+			has_backroom = true
+	check(has_backroom, "and it has a backroom")
 
 
-## Asking twice is a wasted ask, not a second sample. Otherwise the limit is
-## no limit at all — you could re-roll a suspicious answer until it was clean.
-func _test_repeat_question_is_wasted() -> void:
-	var game := _running_game(102)
-	var id: int = Questions.all_ids()[0]
-	var first := game.ask(id)
-	check(game.can_ask(id) == false, "the same question cannot be asked twice")
-	check(game.asks_left == 2, "and the ask was spent")
-	check(game.current.answered[id] == first, "the answer is kept, not re-rolled")
+## A table nobody can stand beside is a table nothing sells from.
+func _test_every_display_is_reachable() -> void:
+	for size in [8, 16]:
+		var shop := Shop.new(size)
+		for index in shop.display_indices():
+			var at := shop.position_of(index)
+			var spot := shop.approach_to(at)
+			check_quiet(shop.walkable(spot),
+				"size %d: a display can be reached" % size)
+			check_quiet(spot != at, "size %d: from a tile beside it" % size)
+	check(true, "every display on both floors can be walked up to")
 
 
-func _test_trap_costs_you() -> void:
-	var game := _running_game(103)
-	var before := game.dread
-	game.ask(Questions.Id.ARE_YOU_HUMAN)
-	check(game.dread == before + Dread.ASK_TRAP_COST, "asking outright raises dread")
-	check(game.human_question_used, "and the game remembers you asked")
-	var other := _running_game(104)
-	var d := other.dread
-	other.ask(Questions.Id.BREAKFAST)
-	check(other.dread == d, "an ordinary question costs nothing")
+func _test_placing() -> void:
+	var shop := Shop.new(8)
+	var at := shop.position_of(shop.display_indices()[0])
+	for i in Shop.TABLE_CAPACITY:
+		check_quiet(shop.place(at, Goods.Unit.new(Goods.Id.SHATTERED_BONE)),
+			"a table takes stock")
+	check(shop.stock_at(at).size() == Shop.TABLE_CAPACITY, "a table holds three")
+	check(not shop.place(at, Goods.Unit.new(Goods.Id.SHATTERED_BONE)),
+		"and no more than three")
+	check(shop.take(at) != null, "and it can be taken off again")
 
 
-# --- Tells -------------------------------------------------------------------
+# --- Thralls -----------------------------------------------------------------
 
-func _test_tells() -> void:
-	check(Tells.all_ids().size() == 7, "there are seven tells")
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 9
-	for _i in 200:
-		var rolled := Tells.roll(rng)
-		check_quiet(rolled.size() >= Tells.PER_THING_MIN, "a thing has at least two tells")
-		check_quiet(rolled.size() <= Tells.PER_THING_MAX, "and at most three")
-		var seen := {}
-		for t in rolled:
-			check_quiet(not seen.has(t), "no tell is rolled twice")
-			seen[t] = true
-	check(true, "200 rolls give two or three distinct tells each")
+## The deck is not a consumable. A card is away while its thrall is, which is
+## what makes the deck a limit on how much you can have in flight.
+func _test_deck_is_a_concurrency_limit() -> void:
+	var world := World.new()
+	world.start(11)
+	check(world.thralls.ready_cards() == Balance.starting_deck, "the deck starts full")
+	for i in Balance.starting_deck:
+		check_quiet(world.dispatch_thrall(), "a card can be played")
+	check(world.thralls.ready_cards() == 0, "playing them all empties the hand")
+	check(not world.dispatch_thrall(), "and there is nothing left to play")
+	check(world.thralls.deck == Balance.starting_deck, "but the deck is not smaller")
 
-	# Late on, stillness stops meaning anything: things learn to blink and
-	# people are too tired to.
-	check(Tells.idle_is_readable(1), "blinking reads early")
-	check(not Tells.idle_is_readable(Tells.ALL_STILL_SHIFT), "and stops reading late")
-	var t := Traveller.new()
-	t.is_thing = true
-	t.tells = [Tells.Id.NO_IDLE]
-	check(t.idle_reads_as_still(1), "a still thing reads as still early")
-	check(not t.idle_reads_as_still(6), "but not once everyone is still")
+	# Wait them home and the cards come back.
+	for _i in int(Balance.dispatch_seconds * 10.0) + 4:
+		world.tick(0.1)
+	check(world.thralls.ready_cards() == Balance.starting_deck,
+		"a thrall coming home returns its card")
 
 
-# --- The line ----------------------------------------------------------------
+func _test_haul_returns() -> void:
+	var world := World.new()
+	world.start(12)
+	world.dispatch_thrall()
+	var before: int = world.shop.backroom.size()
+	for _i in int(Balance.dispatch_seconds * 10.0) + 4:
+		world.tick(0.1)
+	var got: int = world.shop.backroom.size() - before
+	check(got >= Balance.haul_min and got <= Balance.haul_max,
+		"a thrall brings back one to three")
 
-func _test_line_composition() -> void:
-	for seed_value in 40:
-		var game := Game.new()
-		game.start_run(seed_value)
-		check_quiet(game.line.size() >= Dread.TRAVELLERS_MIN, "a shift is six or more")
-		check_quiet(game.line.size() <= Dread.TRAVELLERS_MAX, "and eight or fewer")
-		var things := 0
-		for t in game.line:
-			if t.is_thing:
-				things += 1
-		# Never all of one kind: a shift with no thing teaches nothing, and a
-		# shift with no person makes denying everything correct.
-		check_quiet(things >= 1, "every shift has something in it")
-		check_quiet(things < game.line.size(), "and someone real in it")
-	check(true, "40 opening shifts are mixed, six to eight long")
+	# Over many errands the haul stays inside its band.
+	var world2 := World.new()
+	world2.start(13)
+	for run in 40:
+		while world2.thralls.can_dispatch():
+			world2.dispatch_thrall()
+		for _i in int(Balance.dispatch_seconds * 5.0) + 2:
+			world2.tick(0.2)
+	check(world2.shop.backroom.size() > 0, "and keeps bringing them")
 
 
-func _test_decisions() -> void:
-	var game := _running_game(201)
-	var was_thing: bool = game.current.is_thing
-	var before := game.dread
-	game.decide(false)
-	if was_thing:
-		check(game.things_denied == 1, "denying a thing is counted")
-		check(game.dread == maxi(0, before + Dread.RIGHT_DENY), "and lowers dread")
-	else:
-		check(game.people_turned_away == 1, "denying a person is counted")
-		check(game.dread == before + Dread.WRONG_DENY, "and raises dread")
+# --- Rot ---------------------------------------------------------------------
 
-	# Dread never leaves its range, however many mistakes are made.
-	var g2 := _running_game(202)
+func _test_spoilage() -> void:
+	var keeps := Goods.Unit.new(Goods.Id.SHATTERED_BONE)
+	for _i in 400:
+		check_quiet(not keeps.tick(1.0), "bone does not turn")
+	check(not keeps.rotted, "bone keeps for ever")
+	check(is_zero_approx(keeps.spoilage()), "and never looks like turning")
+
+	var turns := Goods.Unit.new(Goods.Id.PULSING_BIOMASS)
+	var fired := 0
+	for _i in 400:
+		if turns.tick(1.0):
+			fired += 1
+	check(turns.rotted, "biomass turns")
+	check(fired == 1, "and says so exactly once")
+	check(is_equal_approx(turns.spoilage(), 1.0), "and reads as gone afterwards")
+
+	var half := Goods.Unit.new(Goods.Id.FRESH_SCREAMS)
+	half.tick(Goods.shelf_life(Goods.Id.FRESH_SCREAMS) * 0.5)
+	check(absf(half.spoilage() - 0.5) < 0.02, "spoilage reads as it ages")
+
+
+## Corruption is a hole you dig out of, not a timer that forgives you.
+func _test_corruption() -> void:
+	var world := World.new()
+	world.start(21)
+	world.level = 2
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	# Nearly gone already, so it turns before anyone can walk in and buy it.
+	# Left fresh, a customer takes it long before its shelf life is up, which
+	# is the whole point of the good stuff and not what is being checked here.
+	var doomed := Goods.Unit.new(Goods.Id.PULSING_BIOMASS)
+	doomed.age = Goods.shelf_life(Goods.Id.PULSING_BIOMASS) - 0.5
+	world.shop.place(at, doomed)
+	check(is_zero_approx(world.corruption), "a clean shop is not corrupt")
+
+	for _i in 12:
+		world.tick(0.1)
+	check(world.corruption > 0.0, "letting stock turn is corrupting")
+	check(world.rot_total >= 1, "and it is counted")
+	check(world.revenue_multiplier() < 1.0, "which costs you on every sale")
+
+	var held := world.corruption
 	for _i in 30:
-		if g2.phase != Game.Phase.QUESTIONING:
-			break
-		g2.decide(true)
-	check(g2.dread >= Dread.MIN and g2.dread <= Dread.MAX, "dread stays in range")
+		world.tick(1.0)
+	check(is_equal_approx(world.corruption, held),
+		"and it does not fade while the rot is still on the floor")
 
-
-func _test_lights() -> void:
-	var game := _running_game(203)
-	var lit := game.lights
-	var turned_off := 0
-	for _i in 20:
-		if game.phase != Game.Phase.QUESTIONING:
-			break
-		var thing: bool = game.current.is_thing
-		game.decide(true)
-		if thing:
-			turned_off += 1
-	check(game.lights == maxi(0, lit - turned_off),
-		"one light goes out per thing let through, and never below zero")
-
-
-# --- Scares ------------------------------------------------------------------
-
-## The single most important rule in the game.
-func _test_scare_never_from_current_speaker() -> void:
-	var fired_on: Array = []
-	var never_early := true
-	for seed_value in range(300, 360):
-		var game := Game.new()
-		game.start_run(seed_value)
-		game.begin_shift()
-		var guard := 0
-		while game.phase == Game.Phase.QUESTIONING and guard < 40:
-			guard += 1
-			var caused_by := game.index
-			var was_thing: bool = game.current.is_thing
-			game.decide(true)
-			if not was_thing:
-				continue
-			# Run the clock right past the longest possible delay.
-			var steps := 0
-			while game.scare_pending() and steps < 400:
-				steps += 1
-				game.tick(0.25)
-				if not game.scare_pending():
-					if game.index == caused_by:
-						never_early = false
-					fired_on.append(game.index - caused_by)
-					break
-	check(never_early, "no scare ever fires on the traveller that caused it")
-	check(not fired_on.is_empty(), "and scares do fire")
-
-
-func _test_scare_chance_rises() -> void:
-	check(Scares.all_ids().size() == 6, "there are six scares")
-	check(is_equal_approx(Scares.chance(0), 1.0 / 6.0), "a calm booth is one in six")
-	check(Scares.chance(10) > Scares.chance(0), "a frightened one is worse")
-	check(Scares.chance(10) <= 1.0, "and never a certainty above one")
-	for id in Scares.all_ids():
-		check(Scares.copy_for(id) != "", "scare %d has copy" % id)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 3
-	for _i in 100:
-		var d := Scares.delay(rng)
-		check_quiet(d >= Scares.DELAY_MIN and d <= Scares.DELAY_MAX, "delay in range")
-	check(true, "the delay is always twenty to sixty seconds")
-
-
-# --- Learning ----------------------------------------------------------------
-
-## Lean on a question twice and it stops working. This is what stops the game
-## being solved on shift two and played on rails afterwards.
-func _test_things_learn() -> void:
-	var game := _running_game(401)
-	var id: int = Questions.Id.BREAKFAST
-
-	game.shift = 1
-	for _i in 5:
-		game.question_uses[id] = int(game.question_uses.get(id, 0)) + 1
-		game._learn_from(id)
-	check(not game.is_learned(id), "early on, nothing is learned")
-
-	game.shift = Dread.LEARNING_FROM_SHIFT
-	game._learn_from(id)
-	check(game.is_learned(id), "from shift three, a well-used question is learned")
-
-	# A learned question gets a person's answer out of a thing.
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	var human_bank: Array = Questions.POOL[id]["human"]
-	var worn := Questions.answer(id, true, rng, "Elise", true)
-	check(human_bank.has(worn), "a learned question gets a human answer from a thing")
-
-
-func _test_denied_people_return() -> void:
-	var game := _running_game(501)
-	# Turn away a person, and note it.
-	var guard := 0
-	while game.phase == Game.Phase.QUESTIONING and guard < 40:
-		guard += 1
-		if not game.current.is_thing:
-			game.decide(false)
-			break
-		game.decide(true)
-	check(not game.owed_returns.is_empty(), "a turned-away person is owed a return")
-	var owed_name := String(game.owed_returns[0]["name"])
-
-	# Push forward until the debt comes due.
-	var seen := false
+	check(world.sweep() > 0, "sweeping clears it")
 	for _i in 60:
-		if game.phase == Game.Phase.RUN_OVER:
-			break
-		if game.phase == Game.Phase.SHIFT_OVER:
-			game.next_shift()
-			game.begin_shift()
-		elif game.phase == Game.Phase.SHIFT_OPENING:
-			game.begin_shift()
-		elif game.phase == Game.Phase.QUESTIONING:
-			for t in game.line:
-				if t.returning and t.returning_as == owed_name:
-					seen = true
-			game.decide(true)
-		if seen:
-			break
-	check(seen or game.phase == Game.Phase.RUN_OVER,
-		"they come back, unless the run ended first")
+		world.tick(1.0)
+	check(world.corruption < held, "and only then does corruption fall")
+
+	world.corruption = Balance.corruption_cap * 4.0
+	world.tick(0.1)
+	check(world.revenue_multiplier() >= Balance.corruption_worst,
+		"a ruined shop still sells for something")
 
 
-# --- Endings -----------------------------------------------------------------
+# --- Selling -----------------------------------------------------------------
 
-func _test_endings() -> void:
-	# Let everything through.
-	var g1 := _running_game(601)
+func _test_a_sale() -> void:
+	var world := World.new()
+	world.start(31)
+	var at := world.shop.position_of(world.shop.stocked_or_first())
+	world.shop.place(at, Goods.Unit.new(Goods.Id.FEY_BERRIES))
+	var before := world.obols
 	var guard := 0
-	while g1.phase != Game.Phase.RUN_OVER and guard < 200:
+	while world.sales == 0 and guard < 4000:
 		guard += 1
-		if g1.phase == Game.Phase.QUESTIONING:
-			g1.decide(true)
-		elif g1.phase == Game.Phase.SHIFT_OVER:
-			g1.next_shift()
-			g1.begin_shift()
-		elif g1.phase == Game.Phase.SHIFT_OPENING:
-			g1.begin_shift()
-	check(g1.ending_id() == &"emptied_the_zone", "letting everything in empties the zone")
-
-	# Turn everything away.
-	var g2 := _running_game(602)
-	guard = 0
-	while g2.phase != Game.Phase.RUN_OVER and guard < 200:
-		guard += 1
-		if g2.phase == Game.Phase.QUESTIONING:
-			g2.decide(false)
-		elif g2.phase == Game.Phase.SHIFT_OVER:
-			g2.next_shift()
-			g2.begin_shift()
-		elif g2.phase == Game.Phase.SHIFT_OPENING:
-			g2.begin_shift()
-	check(g2.ending_id() == &"turned_everyone_away", "denying everyone empties the line")
-
-	# Play it right.
-	var g3 := _running_game(603)
-	var unrefusable := 0
-	guard = 0
-	while g3.phase != Game.Phase.RUN_OVER and guard < 400:
-		guard += 1
-		if g3.phase == Game.Phase.QUESTIONING:
-			# The faceless ones cannot be refused, so perfect play approves
-			# them and accepts the light. A driver that does not know this
-			# stands at the glass pressing DENY for ever, which is the point.
-			if g3.current.is_faceless():
-				unrefusable += 1
-			g3.decide((not g3.current.is_thing) or g3.current.is_faceless())
-		elif g3.phase == Game.Phase.SHIFT_OVER:
-			g3.next_shift()
-			g3.begin_shift()
-		elif g3.phase == Game.Phase.SHIFT_OPENING:
-			g3.begin_shift()
-	check(g3.ending_id() == &"kept_the_line", "a perfect run keeps the line")
-	# Not every light: the best possible run still loses one for each figure
-	# it was never allowed to turn away, and none for anything else.
-	check(unrefusable > 0, "a perfect run still meets something it cannot refuse")
-	check(g3.things_let_through == unrefusable,
-		"and the only things it lets through are the ones it could not refuse")
-	check(g3.lights == Dread.WINDOW_LIGHTS - unrefusable,
-		"the window loses exactly those lights and no others")
-	check(g3.shift >= Shifts.count(), "and reaches the last shift")
+		world.tick(0.1)
+	check(world.sales == 1, "someone comes in and buys it")
+	check(world.obols > before, "and leaves money on the altar")
+	check(world.revenue == world.obols - before, "which is counted as revenue")
+	check(world.shop.units_on_floor() == 0, "and takes the item with them")
 
 
-## The fifth shift sends something you are not allowed to refuse.
-func _test_faceless() -> void:
-	var game := Game.new()
-	game.start_run(801)
-	game.shift = Game.FACELESS_SHIFT - 1
-	game.next_shift()
-	var faceless: Traveller = null
-	for t in game.line:
-		if t.is_faceless():
-			faceless = t
-	check(faceless != null, "the fifth shift has one with no face")
-	check(faceless.is_thing, "and it is not a person")
-
-	# Walk the line until it steps up, then try to refuse it.
-	game.begin_shift()
+func _test_empty_shop_turns_people_away() -> void:
+	var world := World.new()
+	world.start(32)
 	var guard := 0
-	while game.phase == Game.Phase.QUESTIONING and not game.current.is_faceless() and guard < 20:
+	while world.lost_sales == 0 and guard < 4000:
 		guard += 1
-		game.decide(true)
-	if game.phase == Game.Phase.QUESTIONING and game.current.is_faceless():
-		var before := game.index
-		game.decide(false)
-		check(game.index == before, "denying it does nothing at all")
-		check(game.current.is_faceless(), "and it is still standing there")
-		game.decide(true)
-		check(game.index == before + 1, "approving is the only way past it")
+		world.tick(0.1)
+	check(world.lost_sales > 0, "an empty shop turns people around")
+	check(world.sales == 0, "and sells nothing")
+	check(world.obols == Balance.starting_obols, "and takes nothing")
 
 
-func _test_final_shift() -> void:
-	check(Shifts.count() == 7, "there are seven shifts")
-	for n in range(1, 8):
-		var s := Shifts.get_shift(n)
-		check_quiet(s.title != "" and s.opening != "", "shift %d is written" % n)
-	check(true, "every shift has a title and an opening")
-	check(Shifts.is_final(7), "the seventh is the last")
+func _test_nobody_buys_rot() -> void:
+	var world := World.new()
+	world.start(33)
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	var unit := Goods.Unit.new(Goods.Id.FRESH_SCREAMS)
+	unit.rotted = true
+	world.shop.place(at, unit)
+	check(world.shop.stocked_displays().is_empty(),
+		"a table of rot counts as an empty table")
+	for _i in 600:
+		world.tick(0.1)
+	check(world.sales == 0, "and nobody buys off it")
+	check(world.shop.units_on_floor() == 1, "the rot is still sitting there")
 
-	var game := Game.new()
-	game.start_run(701)
-	game.shift = Shifts.count() - 1
-	game.next_shift()
-	check(game.line.size() == 1, "the last shift is one figure")
-	check(game.line[0].is_thing, "and it is not a person")
+
+# --- Growing -----------------------------------------------------------------
+
+func _test_expansion_keeps_the_stock() -> void:
+	var world := World.new()
+	world.start(41)
+	for i in 6:
+		world.shop.backroom.append(Goods.Unit.new(Goods.Id.SHATTERED_BONE))
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	world.shop.place(at, Goods.Unit.new(Goods.Id.FEY_BERRIES))
+	var total_before := world.shop.units_on_floor() + world.shop.backroom.size()
+
+	check(not world.can_expand(), "you cannot expand while broke")
+	world.obols = Balance.expansion_cost
+	check(world.can_expand(), "the whole of level 1 is reaching this number")
+	check(world.expand(), "and then the walls come down")
+	check(world.level == 2, "which is level 2")
+	check(world.shop.size == Balance.grid_size[2], "a bigger floor")
+	check(world.shop.units_on_floor() + world.shop.backroom.size() == total_before,
+		"and nothing you owned is lost in the move")
+	check(not world.can_expand(), "and it only happens once")
+
+
+func _test_cases_restock_themselves() -> void:
+	var world := World.new()
+	world.start(42)
+	world.obols = Balance.expansion_cost + Balance.case_cost
+	world.expand()
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	check(world.buy_case(at), "a case can be bought")
+	check(world.shop.get_cell(at) == Shop.Cell.CASE, "and it goes in")
+	for _i in 4:
+		world.shop.backroom.append(Goods.Unit.new(Goods.Id.SHATTERED_BONE))
+	var on_floor := world.shop.units_on_floor()
+	for _i in int(Balance.case_restock_seconds * 20.0):
+		world.tick(0.1)
+	check(world.shop.units_on_floor() > on_floor,
+		"and it pulls from the backroom without you")
+	check(world.shop.stock_at(at).size() <= Shop.TABLE_CAPACITY,
+		"and never overfills itself")
+
+
+func _test_audit() -> void:
+	var world := World.new()
+	world.start(51)
+	world.obols = Balance.expansion_cost
+	world.expand()
+	world.obols = 10000
+	world.tribute_owed = 1000
+	world.corruption = 0.0
+	world._audit()
+	check(world.audits_passed == 1, "the Void is satisfied when you can pay")
+	check(world.obols == 9000, "and takes exactly what it is owed")
+	check(world.tribute_owed == 0, "leaving nothing owed")
+
+	# Not holding it is a finding.
+	world.tribute_owed = 100000
+	var held := world.obols
+	world._audit()
+	check(world.audits_failed == 1, "failing to pay is a finding")
+	check(world.obols < held, "and costs you a share of everything")
+
+	# So is running a rotten floor, even with the money in hand.
+	var clean := World.new()
+	clean.start(52)
+	clean.obols = Balance.expansion_cost
+	clean.expand()
+	clean.obols = 100000
+	clean.tribute_owed = 10
+	clean.corruption = Balance.audit_corruption_limit + 1.0
+	clean._audit()
+	check(clean.audits_failed == 1, "so is a corrupt floor, however flush you are")
+
+
+## Same seed, same shop. This is what lets the sweeps mean anything.
+func _test_determinism() -> void:
+	var a := World.new()
+	var b := World.new()
+	a.start(99)
+	b.start(99)
+	for i in 3000:
+		a.tick(0.1)
+		b.tick(0.1)
+		if i % 400 == 0:
+			a.dispatch_thrall()
+			b.dispatch_thrall()
+	check(a.obols == b.obols and a.sales == b.sales and a.lost_sales == b.lost_sales,
+		"two shops on the same seed run identically")
+	check(a.shop.backroom.size() == b.shop.backroom.size(),
+		"down to what is in the back")
 
 
 # --- Harness -----------------------------------------------------------------
-
-func _running_game(seed_value: int) -> Game:
-	var game := Game.new()
-	game.start_run(seed_value)
-	game.begin_shift()
-	return game
-
 
 func check(condition: bool, message: String) -> void:
 	if condition:

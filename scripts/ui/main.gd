@@ -1,92 +1,165 @@
 extends Control
-## The booth, assembled. Portrait and name tag above, transcript in the
-## middle, eight questions and two decisions below.
+## The bazaar. Floor in the middle, numbers on top, cards along the bottom.
 ##
-## The interface never shows dread, never shows a score, and never tells you
-## whether you were right. The only readout in the game is the window.
+## Everything is sized for a thumb: nothing you have to hit is under 80px,
+## and the whole floor is one tap target that resolves to a tile. The counter
+## is deliberately the largest thing on screen — it is the hook.
 
-const TYPE_SPEED := 62.0
+const TOUCH := 84.0
+const BAR := 128.0
 
-var game: Game = null
+var world: World
+var _view: WorldView
+var _stock_panel: StockPanel
 
-var _booth: BoothView
-var _portrait: PortraitView
-var _name_label: Label
-var _reason_label: Label
-var _transcript: RichTextLabel
-var _asks_label: Label
-var _shift_label: Label
-var _question_buttons: Array[Button] = []
-var _approve: Button
-var _deny: Button
+var _obol_label: Label
+var _obol_tick: Label
+var _revenue_label: Label
+var _stat_row: HBoxContainer
+var _corruption_bar: ProgressBar
+var _audit_label: Label
+var _corruption_caption: Label
+var _log_label: Label
+var _hint: Label
+
+var _card_row: HBoxContainer
+var _card_buttons: Array[Button] = []
+var _action_row: HBoxContainer
+var _take_button: Button
+var _sweep_button: Button
+var _buy_card_button: Button
+var _expand_button: Button
+var _case_button: Button
+
 var _overlay: Control
 var _overlay_title: Label
 var _overlay_body: VBoxContainer
-var _scare_flash: ColorRect
-var _scare_text: Label
-var _scare_plate: ColorRect
 
-var _typing: String = ""
-var _typed: float = 0.0
-var _scare_hold: float = 0.0
+## The counter animates toward the real number, because a number that slams
+## is a number nobody watches.
+var _shown_obols: float = 0.0
+var _placing_case: bool = false
 
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_build()
-	_show_title()
+	_start()
 	set_process(true)
 
 
 func _build() -> void:
-	_booth = BoothView.new()
-	add_child(_booth)
+	var back := ColorRect.new()
+	back.color = Palette.NIGHT
+	back.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(back)
 
-	_portrait = PortraitView.new()
-	# The hatch in the painting is where a traveller stands, so the portrait
-	# asks the room for it rather than repeating the number.
-	var hatch := _booth.hatch_rect()
-	_portrait.position = hatch.position
-	_portrait.size = hatch.size
-	add_child(_portrait)
+	_view = WorldView.new()
+	_view.position = Vector2(0, BAR)
+	_view.size = Vector2(1250, 1000 - BAR - BAR * 1.5)
+	_view.tile_tapped.connect(_on_tile_tapped)
+	add_child(_view)
 
-	_shift_label = _label("", 18, Palette.INK_DIM)
-	_shift_label.position = Vector2(60, 44)
-	_shift_label.size = Vector2(600, 26)
+	# The right gutter is the forecasting panel: you cannot balance an inflow
+	# you have to walk the floor to count.
+	_stock_panel = StockPanel.new()
+	_stock_panel.position = Vector2(1256, BAR + 8)
+	_stock_panel.size = Vector2(330, 1000 - BAR - BAR * 1.5 - 16)
+	add_child(_stock_panel)
 
-	# The traveller's file is written on the clipboard on the desk, tilted
-	# with it, because a name tag is a thing you pick up rather than a
-	# caption floating over their head.
-	_name_label = _label("", 27, Color("2f2a24"))
-	_name_label.position = Vector2(126, 752)
-	_name_label.size = Vector2(240, 38)
-	_name_label.rotation = Props.tilt_of(&"clipboard")
-
-	_reason_label = _label("", 16, Color("4a4038"))
-	_reason_label.position = Vector2(126, 800)
-	_reason_label.size = Vector2(232, 150)
-	_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_reason_label.rotation = Props.tilt_of(&"clipboard")
-
-	# Everything said, over the dark glass of the side window.
-	_transcript = RichTextLabel.new()
-	var pane := _booth.side_pane_rect()
-	_transcript.position = pane.position + Vector2(18, 90)
-	_transcript.size = pane.size - Vector2(36, 130)
-	_transcript.bbcode_enabled = true
-	_transcript.scroll_following = true
-	_transcript.add_theme_color_override("default_color", Palette.INK_DIM)
-	_transcript.add_theme_font_size_override("normal_font_size", 19)
-	add_child(_transcript)
-
-	_asks_label = _label("", 18, Palette.LAMP_DIM)
-	_asks_label.position = Vector2(1354, 112)
-	_asks_label.size = Vector2(520, 26)
-
-	_build_questions()
-	_build_decisions()
+	_build_top_bar()
+	_build_bottom_bar()
 	_build_overlay()
-	_build_scare()
+
+
+## The number, and everything that qualifies it.
+func _build_top_bar() -> void:
+	var bar := ColorRect.new()
+	bar.color = Color(0, 0, 0, 0.55)
+	bar.size = Vector2(1600, BAR)
+	add_child(bar)
+
+	_obol_label = _label("0", 62, Palette.OBOL)
+	_obol_label.position = Vector2(28, 16)
+	_obol_label.size = Vector2(420, 70)
+
+	_obol_tick = _label("obols", 20, Palette.INK_DIM)
+	_obol_tick.position = Vector2(32, 88)
+	_obol_tick.size = Vector2(420, 26)
+
+	_revenue_label = _label("", 20, Palette.INK_DIM)
+	_revenue_label.position = Vector2(430, 24)
+	_revenue_label.size = Vector2(400, 26)
+
+	_stat_row = HBoxContainer.new()
+	_stat_row.position = Vector2(430, 56)
+	_stat_row.size = Vector2(700, 40)
+	_stat_row.add_theme_constant_override("separation", 26)
+	add_child(_stat_row)
+
+	# Level 2 only: the two numbers that can end you.
+	_corruption_bar = ProgressBar.new()
+	_corruption_bar.position = Vector2(1130, 30)
+	_corruption_bar.size = Vector2(300, 26)
+	_corruption_bar.max_value = Balance.corruption_cap
+	_corruption_bar.show_percentage = false
+	_corruption_bar.visible = false
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(0, 0, 0, 0.55)
+	track.border_color = Color(0, 0, 0, 0.7)
+	track.set_border_width_all(2)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Palette.ROT
+	_corruption_bar.add_theme_stylebox_override("background", track)
+	_corruption_bar.add_theme_stylebox_override("fill", fill)
+	add_child(_corruption_bar)
+
+	var corruption_caption := _label("corruption", 17, Palette.INK_DIM)
+	corruption_caption.position = Vector2(1130, 4)
+	corruption_caption.size = Vector2(300, 24)
+	_corruption_caption = corruption_caption
+
+	_audit_label = _label("", 20, Palette.VOID)
+	_audit_label.position = Vector2(1130, 64)
+	_audit_label.size = Vector2(440, 30)
+
+	_log_label = _label("", 18, Palette.INK_DIM)
+	_log_label.position = Vector2(24, BAR + 14)
+	_log_label.size = Vector2(232, 300)
+	_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_log_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+
+
+## Cards along the bottom, then the things you press.
+func _build_bottom_bar() -> void:
+	var top := 1000.0 - BAR * 1.5
+	var bar := ColorRect.new()
+	bar.color = Color(0, 0, 0, 0.55)
+	bar.position = Vector2(0, top)
+	bar.size = Vector2(1600, BAR * 1.5)
+	add_child(bar)
+
+	_hint = _label("", 20, Palette.INK_DIM)
+	_hint.position = Vector2(28, top + 6)
+	_hint.size = Vector2(1540, 26)
+
+	_card_row = HBoxContainer.new()
+	_card_row.position = Vector2(28, top + 36)
+	_card_row.size = Vector2(760, TOUCH)
+	_card_row.add_theme_constant_override("separation", 12)
+	add_child(_card_row)
+
+	_action_row = HBoxContainer.new()
+	_action_row.position = Vector2(820, top + 36)
+	_action_row.size = Vector2(760, TOUCH)
+	_action_row.add_theme_constant_override("separation", 12)
+	add_child(_action_row)
+
+	_take_button = _action("Take stock", _on_take)
+	_sweep_button = _action("Sweep", _on_sweep)
+	_buy_card_button = _action("Thrall", _on_buy_card)
+	_case_button = _action("Case", _on_case)
+	_expand_button = _action("EXPAND", _on_expand)
 
 
 func _label(text: String, font_size: int, colour: Color) -> Label:
@@ -98,63 +171,34 @@ func _label(text: String, font_size: int, colour: Color) -> Label:
 	return l
 
 
-## Eight questions, always all eight, always in the same order. The player
-## should know the whole pool by shift two — the decision is which three.
-func _build_questions() -> void:
-	var ids := Questions.all_ids()
-	for i in ids.size():
-		var button := Button.new()
-		button.text = Questions.ask_text(ids[i])
-		button.position = Vector2(1352, 148.0 + float(i) * 58.0)
-		button.size = Vector2(536, 50)
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.add_theme_font_size_override("font_size", 19)
-		_style(button, Palette.DESK, Palette.INK)
-		button.pressed.connect(_on_ask.bind(ids[i]))
-		add_child(button)
-		_question_buttons.append(button)
+func _action(text: String, action: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(TOUCH * 1.7, TOUCH)
+	button.add_theme_font_size_override("font_size", 22)
+	_style(button, Palette.WOOD_DARK)
+	button.pressed.connect(action)
+	_action_row.add_child(button)
+	return button
 
 
-func _build_decisions() -> void:
-	_deny = Button.new()
-	_deny.text = "DENY"
-	_deny.position = Vector2(1352, 682)
-	_deny.size = Vector2(258, 96)
-	_deny.add_theme_font_size_override("font_size", 30)
-	_style(_deny, Palette.DENY.darkened(0.55), Palette.INK)
-	_deny.pressed.connect(_on_decide.bind(false))
-	add_child(_deny)
-
-	_approve = Button.new()
-	_approve.text = "APPROVE"
-	_approve.position = Vector2(1630, 682)
-	_approve.size = Vector2(258, 96)
-	_approve.add_theme_font_size_override("font_size", 30)
-	_style(_approve, Palette.APPROVE.darkened(0.55), Palette.INK)
-	_approve.pressed.connect(_on_decide.bind(true))
-	add_child(_approve)
-
-
-func _style(button: Button, fill: Color, ink: Color) -> void:
+func _style(button: Button, fill: Color) -> void:
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		var box := StyleBoxFlat.new()
 		var tint := fill
 		if state == "hover":
-			tint = fill.lightened(0.12)
+			tint = fill.lightened(0.14)
 		elif state == "pressed":
-			tint = fill.lightened(0.2)
+			tint = fill.lightened(0.26)
 		elif state == "disabled":
-			tint = fill.darkened(0.5)
+			tint = fill.darkened(0.55)
 		box.bg_color = tint
-		box.border_color = Color(0, 0, 0, 0.5)
-		box.set_border_width_all(1)
-		box.content_margin_left = 16
-		box.content_margin_right = 16
-		box.content_margin_top = 10
-		box.content_margin_bottom = 10
+		box.border_color = Color(0, 0, 0, 0.6)
+		box.set_border_width_all(2)
+		box.content_margin_left = 14
+		box.content_margin_right = 14
 		button.add_theme_stylebox_override(state, box)
-	button.add_theme_color_override("font_color", ink)
-	button.add_theme_color_override("font_hover_color", Palette.LAMP)
+	button.add_theme_color_override("font_color", Palette.INK)
 	button.add_theme_color_override("font_disabled_color", Palette.INK_DIM.darkened(0.4))
 
 
@@ -163,203 +207,204 @@ func _build_overlay() -> void:
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_overlay)
 	var scrim := ColorRect.new()
-	scrim.color = Color(0, 0, 0, 0.86)
+	scrim.color = Color(0, 0, 0, 0.88)
 	scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(scrim)
 	var column := VBoxContainer.new()
-	column.position = Vector2(360, 300)
-	column.size = Vector2(1200, 480)
+	column.position = Vector2(180, 240)
+	column.size = Vector2(1240, 520)
 	column.add_theme_constant_override("separation", 22)
 	_overlay.add_child(column)
 	_overlay_title = Label.new()
-	_overlay_title.add_theme_font_size_override("font_size", 44)
-	_overlay_title.add_theme_color_override("font_color", Palette.LAMP)
+	_overlay_title.add_theme_font_size_override("font_size", 52)
+	_overlay_title.add_theme_color_override("font_color", Palette.OBOL)
 	column.add_child(_overlay_title)
 	_overlay_body = VBoxContainer.new()
 	_overlay_body.add_theme_constant_override("separation", 16)
 	column.add_child(_overlay_body)
 
 
-func _build_scare() -> void:
-	_scare_flash = ColorRect.new()
-	_scare_flash.color = Color(0, 0, 0, 0)
-	_scare_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_scare_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_scare_flash)
-	# A plate behind the words, or a scare that lands over a face is unreadable.
-	_scare_plate = ColorRect.new()
-	_scare_plate.color = Color(0, 0, 0, 0.72)
-	_scare_plate.position = Vector2(220, 500)
-	_scare_plate.size = Vector2(1480, 150)
-	_scare_plate.visible = false
-	_scare_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_scare_plate)
+# --- Running -----------------------------------------------------------------
 
-	_scare_text = Label.new()
-	_scare_text.position = Vector2(260, 516)
-	_scare_text.size = Vector2(1400, 120)
-	_scare_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_scare_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_scare_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_scare_text.add_theme_font_size_override("font_size", 30)
-	_scare_text.add_theme_color_override("font_color", Palette.WRONG)
-	_scare_text.visible = false
-	add_child(_scare_text)
+func _start() -> void:
+	world = World.new()
+	world.start(randi())
+	world.sold.connect(_on_sold)
+	world.expanded.connect(_on_expanded)
+	world.audited.connect(_on_audited)
+	_view.bind(world)
+	_stock_panel.bind(world)
+	_shown_obols = float(world.obols)
+	_rebuild_cards()
+	_show_title()
 
-
-# --- Screens -----------------------------------------------------------------
 
 func _show_title() -> void:
-	_clear_overlay("CHECKPOINT")
-	_overlay_line("No papers. No proof. Just their face and your questions.")
-	_overlay_line("")
-	_overlay_line("You are the last human on this side of the glass. Ask up to three questions. Decide who comes in.")
-	_overlay_line("Some of them are not people. None of them will tell you.")
-	_overlay_button("Begin the shift", _start_run)
-	_set_overlay(true)
-
-
-func _start_run() -> void:
-	game = RunState.new_run()
-	game.traveller_arrived.connect(_on_arrival)
-	game.answered.connect(_on_answered)
-	game.ambient.connect(_on_ambient)
-	game.shift_started.connect(_on_shift_started)
-	game.shift_ended.connect(_on_shift_ended)
-	game.scare_fired.connect(_on_scare)
-	game.run_ended.connect(_on_run_ended)
-	game.refused_deny.connect(func() -> void:
-		_write("[color=#9fb4c4][i]The DENY stamp does not move.[/i][/color]"))
-	_transcript.text = ""
-	_on_shift_started(game.shift, game.shift_title, Shifts.get_shift(game.shift).opening)
-
-
-func _on_shift_started(number: int, title: String, opening: String) -> void:
-	_clear_overlay("Shift %d — %s" % [number, title])
-	_overlay_line(opening)
-	var s := Shifts.get_shift(number)
-	if s.scripted != "":
-		_overlay_line(s.scripted)
-	_overlay_button("Open the window", func() -> void:
-		_set_overlay(false)
-		_transcript.text = ""
-		game.begin_shift()
-		_refresh())
-	_set_overlay(true)
-
-
-func _on_shift_ended(number: int) -> void:
-	if game.phase == Game.Phase.RUN_OVER:
-		return
-	_clear_overlay("Shift %d ends" % number)
-	_overlay_line("%d %s still lit in the safe-zone window."
-		% [game.lights, "light" if game.lights == 1 else "lights"])
-	_overlay_button("Next shift", func() -> void:
-		_set_overlay(false)
-		game.next_shift())
-	_set_overlay(true)
-
-
-func _on_run_ended(id: StringName, reason: String) -> void:
-	var titles := {
-		&"kept_the_line": "You kept the line",
-		&"emptied_the_zone": "You emptied the zone",
-		&"turned_everyone_away": "You turned everyone away",
-	}
-	_clear_overlay(String(titles.get(id, "The shift ends")))
-	_overlay_line(reason)
-	_overlay_line("")
-	# No score. The game does not tell you how you did.
-	_overlay_line("The window is not a scoreboard. It was never a scoreboard.")
-	_overlay_button("Again", _start_run)
-	_set_overlay(true)
-
-
-# --- Play --------------------------------------------------------------------
-
-func _on_arrival(t: Traveller) -> void:
-	_portrait.shift = game.shift
-	_portrait.show_traveller(t)
-	_name_label.text = t.given_name
-	_reason_label.text = t.reason
-	if t.returning:
-		_reason_label.text += "\nYou have seen this face before."
-	_refresh()
-
-
-func _on_ask(question: int) -> void:
-	if game == null or not game.can_ask(question):
-		return
-	game.ask(question)
-	_refresh()
-
-
-func _on_answered(_question: int, ask: String, reply: String, _tell: int) -> void:
-	_write("[color=#8f8878]%s[/color]" % ask)
-	_write("[color=#e6ddcb]%s[/color]" % reply)
-
-
-func _on_ambient(line: String) -> void:
-	_write("[color=#6f6a5e][i]%s[/i][/color]" % line)
-
-
-func _on_decide(approve: bool) -> void:
-	if game == null or game.phase != Game.Phase.QUESTIONING:
-		return
-	game.decide(approve)
-	_refresh()
-
-
-func _on_scare(scare: int, copy: String) -> void:
-	_scare_hold = 3.4
-	_scare_text.text = copy
-	_scare_text.visible = true
-	_scare_plate.visible = true
-	match scare:
-		Scares.Id.LEAN_IN:
-			_portrait.lean = 1.0
-		Scares.Id.REFLECTION:
-			_booth.glass_lag = 3.4
-		Scares.Id.WINDOW, Scares.Id.COMEBACK, Scares.Id.KNOCK, Scares.Id.RADIO:
-			_scare_flash.color = Color(0, 0, 0, 0.55)
+	_clear_overlay("ABYSSAL BAZAAR")
+	_overlay_line("You have inherited a shop in a clearing. The trees bleed. The counter is an altar and it was already warm.")
+	_overlay_line("Play a thrall card to send someone into the woods. Thirty seconds later they come back with something to sell.")
+	_overlay_line("Carry it to a table. Put it out. They will come.")
+	_overlay_button("Open the shop", func() -> void:
+		_overlay.visible = false)
+	_overlay.visible = true
 
 
 func _process(delta: float) -> void:
-	if game == null:
+	if world == null or _overlay.visible:
 		return
-	game.tick(delta)
-	_booth.lights = game.lights
-	_booth.shift = game.shift
-	# Dread is never shown. It is only ever how far the lamp reaches.
-	_booth.closeness = float(game.dread) / float(Dread.MAX)
-	if _scare_hold > 0.0:
-		_scare_hold = maxf(0.0, _scare_hold - delta)
-		if _scare_hold == 0.0:
-			_scare_text.visible = false
-			_scare_plate.visible = false
-			_scare_flash.color = Color(0, 0, 0, 0)
-			_portrait.lean = 0.0
+	world.tick(delta)
+	# The counter chases the number rather than jumping to it.
+	_shown_obols = lerpf(_shown_obols, float(world.obols), clampf(delta * 7.0, 0.0, 1.0))
+	if absf(_shown_obols - float(world.obols)) < 0.6:
+		_shown_obols = float(world.obols)
+	_refresh()
 
 
 func _refresh() -> void:
-	if game == null:
+	_obol_label.text = str(int(round(_shown_obols)))
+	_revenue_label.text = "%d taken · %d sold · %d turned away" % [
+		world.revenue, world.sales, world.lost_sales]
+	_hint.text = _hint_text()
+	# The last few lines, newest first, because the shop talks a lot.
+	var recent: Array[String] = []
+	for i in range(world.log_lines.size() - 1, maxi(-1, world.log_lines.size() - 6), -1):
+		recent.append(world.log_lines[i])
+	_log_label.text = "\n".join(recent)
+
+	var level_two := world.level >= 2
+	_corruption_bar.visible = level_two
+	_corruption_caption.visible = level_two
+	_corruption_bar.value = world.corruption
+	_audit_label.visible = level_two
+	if level_two:
+		_audit_label.text = "tribute %d · the Void in %ds" % [
+			world.tribute_owed, int(ceil(world.audit_in))]
+
+	_take_button.disabled = world.carrying != null or world.shop.backroom.is_empty()
+	_take_button.text = "Take stock (%d)" % world.shop.backroom.size()
+	_sweep_button.disabled = world.shop.rotted_on_floor() == 0
+	_buy_card_button.disabled = not world.can_afford(world.card_cost()) \
+		or world.thralls.deck >= Balance.max_deck
+	_buy_card_button.text = "Thrall %d" % world.card_cost()
+	_case_button.visible = level_two
+	_case_button.disabled = not world.can_afford(Balance.case_cost)
+	_case_button.text = "Case %d" % Balance.case_cost
+	_expand_button.visible = world.level == 1
+	_expand_button.disabled = not world.can_expand()
+	_expand_button.text = "EXPAND %d" % Balance.expansion_cost
+	_refresh_cards()
+
+
+func _hint_text() -> String:
+	if _placing_case:
+		return "Tap a table to put the case there."
+	if world.carrying != null:
+		return "Carrying %s. Tap a table beside you to put it out." \
+			% Goods.good_name(world.carrying.id)
+	if not world.shop.backroom.is_empty():
+		return "%d waiting out the back. Take stock, then walk it to a table." \
+			% world.shop.backroom.size()
+	if world.thralls.out.is_empty():
+		return "Nothing in the woods. Play a thrall."
+	return "Tap the floor to walk. Tap a table beside you to put something on it."
+
+
+## One card per thrall in the deck, showing whether it is in your hand or out.
+func _rebuild_cards() -> void:
+	for button in _card_buttons:
+		button.queue_free()
+	_card_buttons.clear()
+	for i in world.thralls.deck:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(TOUCH * 1.1, TOUCH)
+		button.add_theme_font_size_override("font_size", 20)
+		_style(button, Palette.STONE.darkened(0.35))
+		button.pressed.connect(_on_dispatch)
+		_card_row.add_child(button)
+		_card_buttons.append(button)
+
+
+func _refresh_cards() -> void:
+	if _card_buttons.size() != world.thralls.deck:
+		_rebuild_cards()
+	var ready := world.thralls.ready_cards()
+	for i in _card_buttons.size():
+		var button := _card_buttons[i]
+		var in_hand := i < ready
+		button.disabled = not in_hand
+		button.text = "THRALL" if in_hand else "…"
+
+
+# --- What the player does ----------------------------------------------------
+
+func _on_tile_tapped(at: Vector2i) -> void:
+	if world == null or _overlay.visible:
 		return
-	_shift_label.text = "Shift %d — %s" % [game.shift, game.shift_title]
-	var playing := game.phase == Game.Phase.QUESTIONING
-	_asks_label.text = "" if not playing else "%d %s left" % [game.asks_left,
-		"question" if game.asks_left == 1 else "questions"]
-	var ids := Questions.all_ids()
-	for i in _question_buttons.size():
-		var button := _question_buttons[i]
-		button.disabled = not game.can_ask(ids[i])
-		# A question that has stopped working still looks exactly the same.
-		button.text = Questions.ask_text(ids[i])
-	_approve.disabled = not playing
-	_deny.disabled = not playing
+	if _placing_case:
+		if world.buy_case(at):
+			_placing_case = false
+		return
+	# Tapping a table you are standing beside puts down what you are holding.
+	if world.carrying != null and world.shop.is_display(at) and world.place_carried(at):
+		return
+	if world.shop.is_display(at):
+		# Walk to the nearest side of it instead.
+		world.walk_to(world.shop.approach_to(at))
+		return
+	world.walk_to(at)
 
 
-func _write(line: String) -> void:
-	_transcript.append_text(line + "\n")
+func _on_dispatch() -> void:
+	world.dispatch_thrall()
+
+
+func _on_take() -> void:
+	world.take_from_backroom()
+
+
+func _on_sweep() -> void:
+	world.sweep()
+
+
+func _on_buy_card() -> void:
+	if world.buy_card():
+		_rebuild_cards()
+
+
+func _on_case() -> void:
+	_placing_case = true
+
+
+func _on_expand() -> void:
+	world.expand()
+
+
+# --- What the shop does back --------------------------------------------------
+
+func _on_sold(_good: int, _obols: int, at: Vector2) -> void:
+	_view.flash_glitch(at)
+
+
+func _on_expanded(_level: int) -> void:
+	_clear_overlay("SUPPLY CHAIN OF THE DAMNED")
+	_overlay_line("The wooden walls come down. What goes up is cold and black and does not creak.")
+	_overlay_line("The woods will give you Fresh Screams and Pulsing Biomass now. Neither keeps. Anything you overstock will turn on the table, and what turns becomes Corruption, and Corruption eats what every sale is worth.")
+	_overlay_line("The Void audits this shop. It expects its tribute in hand and the floor clean. It is not interested in why.")
+	_overlay_button("Open the doors", func() -> void:
+		_overlay.visible = false)
+	_overlay.visible = true
+
+
+func _on_audited(passed: bool, tribute: int, destroyed: int) -> void:
+	_clear_overlay("THE VOID READS THE LEDGER" if passed else "THE AUDIT FAILS")
+	if passed:
+		_overlay_line("Found adequate. %d paid in tribute." % tribute)
+	else:
+		_overlay_line("%d obols are unmade. Not spent — unmade." % destroyed)
+		_overlay_line("It will be back.")
+	_overlay_button("Continue", func() -> void:
+		_overlay.visible = false)
+	_overlay.visible = true
 
 
 # --- Overlay -----------------------------------------------------------------
@@ -375,8 +420,8 @@ func _overlay_line(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(1100, 0)
-	l.add_theme_font_size_override("font_size", 22)
+	l.custom_minimum_size = Vector2(1200, 0)
+	l.add_theme_font_size_override("font_size", 24)
 	l.add_theme_color_override("font_color", Palette.INK_DIM)
 	_overlay_body.add_child(l)
 	return l
@@ -385,13 +430,9 @@ func _overlay_line(text: String) -> Label:
 func _overlay_button(text: String, action: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(340, 54)
-	button.add_theme_font_size_override("font_size", 22)
-	_style(button, Palette.DESK, Palette.LAMP)
+	button.custom_minimum_size = Vector2(420, TOUCH)
+	button.add_theme_font_size_override("font_size", 26)
+	_style(button, Palette.WOOD_DARK)
 	button.pressed.connect(action)
 	_overlay_body.add_child(button)
 	return button
-
-
-func _set_overlay(shown: bool) -> void:
-	_overlay.visible = shown
