@@ -21,12 +21,20 @@ const CELL := 64
 const TILE_FLOOR := Vector2i(0, 0)
 const TILE_FLOOR_ALT := Vector2i(1, 0)
 const TILE_WALL := Vector2i(2, 0)
+## A 64x128 post. Twice as tall as its cell, so it needs a texture origin to
+## rise out of it and a y-sort origin to sort by its base — see the README.
+const TILE_POST := Vector2i(4, 0)
 const SOURCE := 0
+
+const PROP_SCENE := preload("res://scenes/prop.tscn")
 
 @onready var ground: TileMapLayer = $Ground
 @onready var walls: TileMapLayer = $Walls
 @onready var decor: TileMapLayer = $Decor
-@onready var player: Player = $Player
+## Everything that has to sort against the player lives in here, including
+## the player. See the note on Prop for why this is not a tile layer.
+@onready var props: Node2D = $Props
+@onready var player: Player = $Props/Player
 
 
 func _ready() -> void:
@@ -47,6 +55,10 @@ func _paint_starter_room() -> void:
 				ground.set_cell(at, SOURCE, TILE_FLOOR_ALT if alt else TILE_FLOOR)
 			else:
 				walls.set_cell(at, SOURCE, TILE_WALL)
+	# A couple of posts inside the room. They are props rather than tiles, so
+	# the player passes behind them.
+	for x in [6, 13]:
+		add_prop(Vector2i(x, 6))
 
 
 ## Drop the player in the middle of whatever has been painted.
@@ -56,6 +68,16 @@ func _place_player() -> void:
 		used = ROOM
 	var middle := used.position + used.size / 2
 	player.global_position = Vector2(middle) * float(CELL) + Vector2(CELL, CELL) * 0.5
+
+
+## Stand a prop on a cell. Its origin goes at the bottom of the cell, so it
+## sorts by where it touches the floor.
+func add_prop(cell: Vector2i, height: float = 128.0) -> Prop:
+	var prop: Prop = PROP_SCENE.instantiate()
+	prop.height = height
+	prop.position = Vector2(cell.x * CELL + CELL * 0.5, cell.y * CELL + CELL)
+	props.add_child(prop)
+	return prop
 
 
 ## Which cell a point in the world is in. Handy for anything that needs to

@@ -32,6 +32,7 @@ and that world coordinates and grid cells agree both ways.
 | `scenes/player.tscn` | CharacterBody2D with a feet-sized collider |
 | `scripts/world.gd` | Paints the starter room; grid helpers |
 | `scripts/player.gd` | Eight-way movement |
+| `scenes/prop.tscn` | A tall thing the player can walk behind |
 | `resources/tileset.tres` | The TileSet. 64 × 64, one physics layer |
 | `assets/placeholder_tiles.png` | **Placeholder art. Replace it** |
 
@@ -40,12 +41,53 @@ and that world coordinates and grid cells agree both ways.
 | Layer | For | Collision | Sorting |
 |---|---|---|---|
 | `Ground` | Floor | None | None — nothing walks behind a floor |
-| `Walls` | Anything solid | From the tile | Y-sorted |
-| `Decor` | Clutter over the walls | None | Y-sorted |
+| `Walls` | Solid walls at the room's edge | From the tile | Y-sorted (against each other only) |
+| `Decor` | Flat clutter | None | Y-sorted (against each other only) |
+| `Props` | **Tall things the player walks behind** | From the prop | Y-sorted with the player |
 
 Collision comes from the **tile**, not from the layer. A tile is solid because
 you gave it a collision shape in the TileSet, and only then. That is why the
 smoke test checks for one.
+
+## Do I need to configure tile properties?
+
+**Floor tiles: no.** Slice and paint. Nothing else.
+
+**Anything solid: yes — a collision shape.** Select the tile, open **Physics**
+in the tile inspector, and draw a rectangle on physics layer 0. A tile with no
+shape looks identical in the editor and is walked straight through; the smoke
+test checks for one on the wall tile for exactly that reason.
+
+**Tiles taller than one cell: two origins.** For a 64 x 128 tile in a 64 grid:
+
+| Property | Value | Why |
+|---|---|---|
+| Size in atlas | 1 x 2 | It spans two atlas cells |
+| **Texture Origin** | `(0, -32)` | Lifts it so its base sits on its cell instead of straddling it |
+| **Y Sort Origin** | `32` | Moves its sort point from the middle of the cell to the bottom |
+
+Both are in the tile inspector when a tile is selected in the TileSet panel.
+`4:0` in `resources/tileset.tres` is a worked example.
+
+## What Y-sorting will and will not do
+
+Tiles in a Y-sorted TileMapLayer **sort correctly against each other**, so
+tall tiles overlap in the right order. They do **not** interleave with sibling
+nodes — a tile can never be drawn in front of the player, whatever origins you
+set, and no error is raised. The player simply walks over the top of it.
+
+So **anything the player must pass behind is a prop, not a tile**:
+`scenes/prop.tscn`, added to the `Props` node, which is Y-sorted and contains
+the player. `World.add_prop(cell)` puts one on a cell for you.
+
+Use tile layers for floors and for walls at the edge of the room, where
+nothing ever needs to walk behind them. Use props for posts, counters,
+shelves — anything standing in the middle of the floor.
+
+`tests/render.gd` checks this by counting pixels of the player on screen: zero
+when standing behind a prop, about sixteen hundred when nothing is in the way.
+It is the only way to catch a sorting mistake, because getting it wrong throws
+no error.
 
 ## Putting your own tiles in
 
