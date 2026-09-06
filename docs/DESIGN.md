@@ -60,6 +60,14 @@ spreading across a floor you were proud of, a multiplier falling while you
 watch, and prices climbing far enough that meeting them means running more
 thralls than you can possibly sell for.
 
+## The projection
+
+Isometric, because the art is isometric. See `docs/ASSETS.md`.
+
+The simulation was written knowing nothing about the screen, so changing the
+whole projection from square three-quarter to 2:1 diamonds touched one file
+and no rules, and every test kept passing. That is the reason for the split.
+
 ## Two deliberate simplifications
 
 **Customers walk in straight lines.** The floor is a room you can see all of,

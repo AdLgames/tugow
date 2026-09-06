@@ -70,6 +70,22 @@ func _ready() -> void:
 	_check(world.player_target != table, "tapping a table does not walk you into it")
 	_check(world.shop.walkable(world.player_target), "it walks you beside it")
 
+	# The isometric projection is the only way input reaches the sim, so a
+	# tile that does not survive the round trip is a tile nobody can tap.
+	var view: WorldView = _main._view
+	var misses := 0
+	for y in world.shop.size:
+		for x in world.shop.size:
+			var at := Vector2i(x, y)
+			if view.tile_at(view.project_centre(Vector2(at))) != at:
+				misses += 1
+	_check(misses == 0, "every tile survives the projection round trip (%d missed)" % misses)
+
+	# And a tap between two tiles lands on one of them, not on nothing.
+	var centre := view.project_centre(Vector2(world.shop.size / 2, world.shop.size / 2))
+	var nudged := view.tile_at(centre + Vector2(view.tile_w() * 0.2, 0.0))
+	_check(world.shop.in_bounds(nudged), "a tap just off centre still lands on the floor")
+
 	await _run(45.0)
 	_check(world.tribute_owed >= 0, "tribute accrues without going negative")
 	print("UI smoke: %d dispatched, %d placed, %d sold, %d obols, level %d."
