@@ -1,19 +1,4 @@
-# Godot 4+
 .godot/
-/android/
-export.cfg
-/build/
-/dist/
-*.translation
-
-# Steam
-steam_api*.dll
-libsteam_api.*
-steam_api*.lib
-
-# OS / editor
-.DS_Store
-*.swp
-
-# Godot import stubs for the design-system copy (web tooling, not runtime)
-docs/design-system/**/*.import
+.import/
+export/
+*.tmp

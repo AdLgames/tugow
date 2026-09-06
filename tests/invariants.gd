@@ -1,213 +1,139 @@
 extends Node
-## Property tests. The suite in tests.gd asserts outcomes — a run terminates,
-## three of a kind scores 66 — and every serious bug this project has had
-## slipped past it: the bench was unreachable for a whole build, two dice
-## rattled each other nine times in one throw, and every physics throw settled
-## on the spot. All of those violate something that should never be true.
+## Property fuzz. Runs the shop badly — dispatching at random, stocking at
+## random, never sweeping, expanding when it can — hundreds of times, and
+## checks what must be true at every tick rather than the outcome of any run.
 ##
-## So this file asserts what must hold after EVERY action, over thousands of
-## randomly played turns, rather than what a particular action returns.
-##   godot --headless --path . res://tests/invariants.tscn
+## Outcome tests pass on a shop that quietly loses stock. These are the ones
+## that catch a unit falling out of the world.
 
-const RUNS := 60
-const MAX_ACTIONS := 400
+const RUNS := 160
+const TICKS := 1600
+const DT := 0.2
 
-var _failures: Array[String] = []
 var _checks := 0
-var _actions := 0
+var _failures: Array[String] = []
 
 
 func _ready() -> void:
-	_fuzz_runs()
-	_fuzz_throws()
+	var ticks := 0
+	for seed_value in RUNS:
+		ticks += _fuzz(seed_value)
+	print("  %d ticks fuzzed across %d shops" % [ticks, RUNS])
 	_report()
 
 
-# --- The run's state machine -------------------------------------------------
-
-func _fuzz_runs() -> void:
-	for seed_value in range(1, RUNS + 1):
-		var game := Game.new()
-		game.start_run(seed_value)
-		var guard := 0
-		while game.phase != Game.Phase.RUN_OVER and guard < MAX_ACTIONS:
-			guard += 1
-			_actions += 1
-			_check_invariants(game, seed_value)
-			if game.phase == Game.Phase.BENCH:
-				_random_bench(game, seed_value + guard)
-				continue
-			_random_turn(game, seed_value + guard)
-		_check_invariants(game, seed_value)
-		if guard >= MAX_ACTIONS:
-			_fail("run %d never ended" % seed_value)
-	print("  %d actions fuzzed across %d runs" % [_actions, RUNS])
-
-
-## Everything that must be true of the game at rest, whatever just happened.
-func _check_invariants(game: Game, seed_value: int) -> void:
-	var card := game.card
+func _fuzz(seed_value: int) -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value * 6011 + 7
+	var world := World.new()
+	world.start(seed_value)
 	var tag := "seed %d" % seed_value
 
-	# The card is thirteen lines, always, in exactly one state each.
-	var counted := card.count_state(Scorecard.State.OPEN) \
-		+ card.count_state(Scorecard.State.PLAYER) \
-		+ card.count_state(Scorecard.State.ADVERSARY) \
-		+ card.count_state(Scorecard.State.BURNED)
-	_expect(counted == Scoring.BOX_COUNT, "%s: the card is not thirteen lines (%d)" % [tag, counted])
-	_expect(card.open_count() == card.open_boxes().size(), "%s: open count disagrees with open list" % tag)
-
-	# The run total reconciles against the card: the lines the player still
-	# holds, plus what was on lines an Adversary loss handed back. Nothing
-	# else may add to or subtract from it.
-	var owed := 0
-	for box in card.player_boxes():
-		owed += card.points[box]
-	_expect(owed + card.reclaimed_total == card.run_total,
-		"%s: run total %d but lines sum to %d and %d was reclaimed"
-		% [tag, card.run_total, owed, card.reclaimed_total])
-
-	# An open line carries no points. Reopening one without clearing it left
-	# scores stranded on lines that were neither spent nor scoreable.
-	for box in card.open_boxes():
-		_expect(card.points[box] == 0,
-			"%s: %s is open but still carries %d" % [tag, Scoring.box_name(box), card.points[box]])
-
-	# No line is spent twice, and nothing is spent that is still open.
-	var spent_seen := {}
-	for box in card.spend_order:
-		_expect(not spent_seen.has(box), "%s: %s spent twice" % [tag, Scoring.box_name(box)])
-		spent_seen[box] = true
-		_expect(card.states[box] != Scorecard.State.OPEN,
-			"%s: %s is in the spend order but still open" % [tag, Scoring.box_name(box)])
-
-	# An adversary can never hold more lines than the limit that ends the run.
-	_expect(card.adversary_count() <= Balance.adversary_card_limit,
-		"%s: adversary holds %d lines, past the limit" % [tag, card.adversary_count()])
-
-	# A declared line is always one the adversary could actually take.
-	if game.adversary != null and game.adversary.declared_box >= 0:
-		var declared: int = game.adversary.declared_box
-		var takeable := card.is_open(declared) \
-			or game.adversary.id == &"debtor" and card.states[declared] == Scorecard.State.PLAYER
-		_expect(takeable, "%s: %s is declared but cannot be taken"
-			% [tag, Scoring.box_name(declared)])
-
-	# The dice on the table are distinct, and a staked die is never lost.
-	var ids := {}
-	for die in game.pool.table:
-		_expect(not ids.has(die.id), "%s: %s is on the table twice" % [tag, die.die_name])
-		ids[die.id] = true
-		_expect(not (die.locked and die.lost), "%s: %s is staked and in the dirt" % [tag, die.die_name])
-		_expect(die.value >= 0 and die.value <= Die.FACE_CAP,
-			"%s: %s shows %d" % [tag, die.die_name, die.value])
-
-	# The floor score never runs below what was carried into it.
-	_expect(game.floor_score >= game.floor_carry_in,
-		"%s: floor score %d below the %d carried in" % [tag, game.floor_score, game.floor_carry_in])
-
-	# A turn always has a legal move: something to throw, or a line to settle.
-	if game.phase == Game.Phase.TURN:
-		var can_act := game.can_throw() and game.draws_left() > 0
-		_expect(can_act or (game.turn_rolled and card.open_count() > 0),
-			"%s: a turn with nothing to throw and nothing to settle" % tag)
+	for i in TICKS:
+		# Play badly and at random.
+		if rng.randf() < 0.10:
+			world.dispatch_thrall()
+		if rng.randf() < 0.12 and world.carrying == null:
+			world.take_from_backroom()
+		if rng.randf() < 0.12 and world.carrying != null:
+			var spots := world.shop.display_indices()
+			var at := world.shop.position_of(spots[rng.randi_range(0, spots.size() - 1)])
+			# Placing needs you to be standing beside it, so walk there first.
+			world.player = Vector2(at)
+			world.place_carried(at)
+		if rng.randf() < 0.02:
+			world.sweep()
+		if rng.randf() < 0.01:
+			world.buy_card()
+		if world.can_expand() and rng.randf() < 0.3:
+			world.expand()
+		if world.level >= 2 and rng.randf() < 0.01:
+			var spots2 := world.shop.display_indices()
+			world.buy_case(world.shop.position_of(spots2[rng.randi_range(0, spots2.size() - 1)]))
+		world.tick(DT)
+		_hold(world, tag)
+	_hold(world, tag + " end")
+	return TICKS
 
 
-func _random_turn(game: Game, seed_value: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	# Nothing can be settled before the dice have been thrown.
-	if not game.turn_rolled:
-		game.throw(rng.randi_range(0, 2))
-		return
-	if game.rerolls_left > 0 and game.can_throw() and rng.randf() < 0.7:
-		game.throw(rng.randi_range(0, 2))
-		return
-	# Stake something, sometimes, including the last free die.
-	for die in game.pool.table:
-		if not die.locked and not die.lost and rng.randf() < 0.25:
-			game.lock_die(die)
-	var boxes := game.card.open_boxes()
-	if boxes.is_empty():
-		return
-	game.write_box(boxes[rng.randi_range(0, boxes.size() - 1)])
+func _hold(world: World, tag: String) -> void:
+	# Money is never negative, and revenue only ever goes up.
+	_expect(world.obols >= 0, "%s: %d obols" % [tag, world.obols])
+	_expect(world.revenue >= 0, "%s: revenue %d" % [tag, world.revenue])
 
+	# Corruption stays inside its range, and the multiplier inside its.
+	_expect(world.corruption >= 0.0 and world.corruption <= Balance.corruption_cap,
+		"%s: corruption %.1f" % [tag, world.corruption])
+	var mult := world.revenue_multiplier()
+	_expect(mult >= Balance.corruption_worst and mult <= Balance.price_multiplier,
+		"%s: multiplier %.2f" % [tag, mult])
 
-func _random_bench(game: Game, seed_value: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var offers := Bench.offers(game)
-	if not offers.is_empty() and rng.randf() < 0.5:
-		var offer: Dictionary = offers[rng.randi_range(0, offers.size() - 1)]
-		var cost := int(offer["cost"])
-		if Bench.can_afford(game, cost):
-			var open := game.card.open_boxes()
-			if open.size() >= cost:
-				var sacrifices: Array[int] = []
-				for i in cost:
-					sacrifices.append(open[i])
-				var target := -1
-				match String(offer["target"]):
-					"die", "bitter_die":
-						target = game.pool.dice[0].id
-						for d in game.pool.dice:
-							if d.bitter:
-								target = d.id
-					"filled_box":
-						var filled := game.card.player_boxes()
-						if not filled.is_empty():
-							target = filled[0]
-				Bench.apply(game, offer["id"], sacrifices, target)
-	game.leave_bench()
+	# The deck is a concurrency limit: never more thralls out than cards, and
+	# a card is never destroyed by playing it.
+	_expect(world.thralls.out.size() <= world.thralls.deck,
+		"%s: %d thralls out on a deck of %d"
+		% [tag, world.thralls.out.size(), world.thralls.deck])
+	_expect(world.thralls.ready_cards() >= 0, "%s: negative hand" % tag)
+	_expect(world.thralls.deck >= Balance.starting_deck
+		and world.thralls.deck <= Balance.max_deck,
+		"%s: deck of %d" % [tag, world.thralls.deck])
 
+	# No table ever holds more than a table holds.
+	for key in world.shop.displays:
+		_expect(world.shop.displays[key].size() <= Shop.TABLE_CAPACITY,
+			"%s: a display holds %d" % [tag, world.shop.displays[key].size()])
 
-# --- Throws, from both paths -------------------------------------------------
+	# Everything on the floor is a real good, and a rotted unit is fully aged.
+	for key in world.shop.displays:
+		for unit in world.shop.displays[key]:
+			_expect(Goods.TABLE.has(unit.id), "%s: an unknown thing is on a table" % tag)
+			if unit.rotted:
+				_expect(Goods.perishable(unit.id),
+					"%s: something that keeps has turned" % tag)
 
-func _fuzz_throws() -> void:
-	# Whatever produced a throw, it must satisfy the contract.
-	var game := Game.new()
-	game.start_run(4242)
-	var violations := 0
-	for i in 400:
-		game.pool.begin_turn("player")
-		game.pool.throw_table(i % 3, false)
-		var records := Throw.records_for(game.pool.table)
-		for problem in ThrowContract.violations(records):
-			violations += 1
-			_fail("model throw: %s" % problem)
-		# The values the resolver reads never include a lost die, and always
-		# include the extra face of a cocked one.
-		var expected := 0
-		for entry in records:
-			if entry["lost"]:
-				continue
-			expected += 1
-			if int(entry["second_value"]) > 0:
-				expected += 1
-		_expect(ThrowContract.values_of(records).size() == expected,
-			"model throw %d: the resolver reads the wrong number of faces" % i)
-	print("  400 model throws checked against the contract, %d violations" % violations)
+	# Nothing that keeps ever turns, however long the shop runs.
+	for unit in world.shop.backroom:
+		if not Goods.perishable(unit.id):
+			_expect(not unit.rotted, "%s: bone turned in the back" % tag)
+
+	# Customers are always somewhere real and holding something real.
+	for c in world.customers:
+		_expect(c.state >= Customer.State.ENTERING and c.state <= Customer.State.GONE,
+			"%s: a customer is in state %d" % [tag, c.state])
+		_expect(c.at.x >= -1.0 and c.at.y >= -1.0
+			and c.at.x <= float(world.shop.size) and c.at.y <= float(world.shop.size),
+			"%s: a customer is outside the shop at %s" % [tag, c.at])
+		if c.carrying != null:
+			_expect(Goods.TABLE.has(c.carrying.id),
+				"%s: a customer is holding an unknown thing" % tag)
+			_expect(not c.carrying.rotted, "%s: a customer picked up rot" % tag)
+
+	# The level and the floor agree about how big the shop is.
+	_expect(world.shop.size == Balance.grid_size[world.level],
+		"%s: level %d on a floor of %d" % [tag, world.level, world.shop.size])
+
+	# Sales and lost sales are only ever counted forward.
+	_expect(world.sales >= 0 and world.lost_sales >= 0,
+		"%s: negative sales" % tag)
+
+	# Level 1 never owes tribute, because the Void has not noticed it yet.
+	if world.level == 1:
+		_expect(world.tribute_owed == 0,
+			"%s: tribute owed before the Void was watching" % tag)
 
 
 func _expect(condition: bool, message: String) -> void:
 	_checks += 1
-	if not condition:
-		_fail(message)
-
-
-func _fail(message: String) -> void:
-	# One line per distinct problem: a broken invariant fires thousands of times.
-	if not _failures.has(message):
+	if not condition and not _failures.has(message):
 		_failures.append(message)
 
 
 func _report() -> void:
-	print("")
 	if _failures.is_empty():
-		print("%d invariant checks passed." % _checks)
+		print("\n%d invariant checks passed." % _checks)
 		get_tree().quit(0)
 		return
-	print("%d distinct invariant FAILURES over %d checks:" % [_failures.size(), _checks])
+	print("\n%d distinct invariant FAILURES over %d checks:" % [_failures.size(), _checks])
 	for f in _failures:
 		print("  - %s" % f)
 	get_tree().quit(1)

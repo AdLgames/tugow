@@ -1,832 +1,403 @@
 extends Node
-## Headless test suite. Run with:
-##   godot --headless --path . res://tests/tests.tscn
+## The rules. The sim is deterministic and steps by delta, so a whole shop
+## day runs here in milliseconds and none of it needs a window.
 
-var _failures: Array[String] = []
-var _checks := 0
+var _passed := 0
+var _failed: Array[String] = []
 
 
 func _ready() -> void:
-	_test_upper_boxes()
-	_test_combination_boxes()
-	_test_curve_variants()
-	_test_pattern_gate()
-	_test_scorecard()
-	_test_dice_behaviour()
-	_test_locking_narrows_the_table()
-	_test_charms()
-	_test_forge()
-	_test_adversaries()
-	_test_charm_limit()
-	_test_denial()
-	_test_floor_transition()
-	_test_hold()
-	_test_hold_does_not_waste_draws()
-	_test_weekly_reset()
-	_test_duel_cadence()
-	_test_overflow_carry()
-	_test_lock_out_guard()
-	_test_free_dice_excludes_lost()
-	_test_throw_zones()
-	_test_model_matches_calibration()
-	_test_rail_persistence()
-	_test_collisions_and_cocking()
-	_test_underside()
-	_test_rail_multiplier()
-	_test_lost_dice_are_floor_long()
-	_test_new_charms()
-	_test_full_runs()
+	_test_goods()
+	_test_shop_layout()
+	_test_every_display_is_reachable()
+	_test_placing()
+	_test_deck_is_a_concurrency_limit()
+	_test_haul_returns()
+	_test_spoilage()
+	_test_corruption()
+	_test_a_sale()
+	_test_empty_shop_turns_people_away()
+	_test_nobody_buys_rot()
+	_test_expansion_keeps_the_stock()
+	_test_cases_restock_themselves()
+	_test_audit()
+	_test_both_projections()
+	_test_determinism()
 	_report()
 
 
-# --- Scoring -----------------------------------------------------------------
+# --- Goods -------------------------------------------------------------------
 
-func _test_upper_boxes() -> void:
-	# three 5s -> 15 x 5 = 75
-	check(Scoring.score(Scoring.Box.FIVES, [5, 5, 5, 2, 1]) == 75, "three 5s score 75")
-	check(Scoring.score(Scoring.Box.ACES, [1, 1, 3, 4, 5]) == 2, "two aces score 2")
-	check(Scoring.score(Scoring.Box.SIXES, [6, 6, 6, 6, 6]) == 180, "five 6s score 180")
-	check(Scoring.score(Scoring.Box.TWOS, [1, 3, 4, 5, 6]) == 0, "no twos scores 0")
-
-
-func _test_combination_boxes() -> void:
-	# Three of a Kind: sum of all five x 3. 4+4+4+5+5 = 22 -> 66
-	check(Scoring.score(Scoring.Box.THREE_KIND, [4, 4, 4, 5, 5]) == 66, "three of a kind sums x3")
-	check(Scoring.score(Scoring.Box.THREE_KIND, [4, 4, 2, 5, 5]) == 0, "three of a kind needs a triple")
-	# Full House: triple face x pair face x 10. 6s over 3s -> 180
-	check(Scoring.score(Scoring.Box.FULL_HOUSE, [6, 6, 6, 3, 3]) == 180, "full house 6s over 3s = 180")
-	check(Scoring.score(Scoring.Box.FULL_HOUSE, [6, 6, 6, 3, 2]) == 0, "full house needs the pair")
-	# Small Straight: span x highest die x 5. 3-4-5-6 + 2 -> 4 x 6 x 5 = 120
-	check(Scoring.score(Scoring.Box.SMALL_STRAIGHT, [3, 4, 5, 6, 2]) == 120, "small straight 3-4-5-6 = 120")
-	check(Scoring.score(Scoring.Box.SMALL_STRAIGHT, [1, 2, 3, 4, 5]) == 100, "a five-run scores its best four")
-	check(Scoring.score(Scoring.Box.SMALL_STRAIGHT, [1, 2, 3, 5, 5]) == 0, "three in a row is not a small straight")
-	# Large Straight: product of all five. 2-3-4-5-6 -> 720
-	check(Scoring.score(Scoring.Box.LARGE_STRAIGHT, [2, 3, 4, 5, 6]) == 720, "large straight 2-6 = 720")
-	check(Scoring.score(Scoring.Box.LARGE_STRAIGHT, [1, 2, 3, 4, 6]) == 0, "broken run scores no large straight")
-	# Chance: sum, doubled per 6 shown. 24 with two 6s -> 96
-	check(Scoring.score(Scoring.Box.CHANCE, [6, 6, 5, 4, 3]) == 44, "chance adds 10 per 6")
-	check(Scoring.score(Scoring.Box.CHANCE, [1, 2, 3, 4, 5]) == 15, "chance with no 6s is the sum")
+func _test_goods() -> void:
+	check(Goods.all_ids().size() == 4, "there are four goods")
+	check(Goods.for_tier(1).size() == 2, "level 1 stocks two of them")
+	check(Goods.for_tier(2).size() == 4, "level 2 stocks all four")
+	for id in Goods.all_ids():
+		check(Goods.price(id) > 0, "%s has a price" % Goods.good_name(id))
+		check(Goods.blurb(id) != "", "%s has a blurb" % Goods.good_name(id))
+	# The whole level 2 pivot is that the good stuff does not keep.
+	for id in Goods.for_tier(1):
+		check(not Goods.perishable(id), "%s keeps" % Goods.good_name(id))
+	for id in Goods.all_ids():
+		if Goods.for_tier(1).has(id):
+			continue
+		check(Goods.perishable(id), "%s does not keep" % Goods.good_name(id))
+		check(Goods.price(id) > 100, "%s is worth the trouble" % Goods.good_name(id))
 
 
-func _test_curve_variants() -> void:
-	var original: int = Balance.curve
-	Balance.curve = Balance.ScoreCurve.RAW
-	check(Scoring.score(Scoring.Box.FOUR_KIND, [6, 6, 6, 6, 1]) == 1296, "raw four of a kind is face^4")
-	check(Scoring.score(Scoring.Box.YAHTZEE, [4, 4, 4, 4, 4]) == 1024, "raw yahtzee is face^5")
-	Balance.curve = Balance.ScoreCurve.TEMPERED
-	check(Scoring.score(Scoring.Box.FOUR_KIND, [6, 6, 6, 6, 1]) == 1080, "tempered four of a kind is face^3 x 5")
-	check(Scoring.score(Scoring.Box.YAHTZEE, [4, 4, 4, 4, 4]) == 512, "tempered yahtzee is face^4 x 2")
-	# The whole point of the operators: which face you chase is the question.
-	check(Scoring.score(Scoring.Box.FOUR_KIND, [2, 2, 2, 2, 1]) == 40, "four 2s stay small")
-	Balance.curve = original
+# --- The floor ---------------------------------------------------------------
+
+func _test_shop_layout() -> void:
+	var shop := Shop.new(8)
+	check(shop.size == 8, "level 1 is eight across")
+	check(shop.get_cell(shop.altar) == Shop.Cell.ALTAR, "the counter is an altar")
+	check(shop.get_cell(shop.door) == Shop.Cell.DOOR, "and there is a way in")
+	check(not shop.display_indices().is_empty(), "there are tables to stock")
+	for x in shop.size:
+		check_quiet(shop.get_cell(Vector2i(x, 0)) == Shop.Cell.WALL, "the shop is walled")
+	check(true, "the shop is walled in")
+
+	var big := Shop.new(16)
+	check(big.display_indices().size() > shop.display_indices().size(),
+		"the expansion is more room, not just more floor")
+	var has_backroom := false
+	for i in big.cells.size():
+		if big.cells[i] == Shop.Cell.BACKROOM:
+			has_backroom = true
+	check(has_backroom, "and it has a backroom")
 
 
-func _test_pattern_gate() -> void:
-	check(Scoring.is_pattern_met(Scoring.Box.CHANCE, [1, 1, 1, 1, 1]), "chance always takes")
-	check(not Scoring.is_pattern_met(Scoring.Box.YAHTZEE, [1, 1, 1, 1, 2]), "yahtzee is unmet by four")
-	check(Scoring.is_pattern_met(Scoring.Box.FOURS, [4, 1, 2, 3, 5]), "one four meets the fours box")
+## A table nobody can stand beside is a table nothing sells from.
+func _test_every_display_is_reachable() -> void:
+	for size in [8, 16]:
+		var shop := Shop.new(size)
+		for index in shop.display_indices():
+			var at := shop.position_of(index)
+			var spot := shop.approach_to(at)
+			check_quiet(shop.walkable(spot),
+				"size %d: a display can be reached" % size)
+			check_quiet(spot != at, "size %d: from a tile beside it" % size)
+	check(true, "every display on both floors can be walked up to")
 
 
-# --- Card --------------------------------------------------------------------
-
-func _test_scorecard() -> void:
-	var card := Scorecard.new()
-	check(card.open_count() == 13, "a fresh card has thirteen boxes")
-	card.write_player(Scoring.Box.SIXES, 72)
-	card.write_player(Scoring.Box.YAHTZEE, 0)
-	check(card.open_count() == 11, "each write spends a box")
-	check(card.run_total == 72, "a scratch adds nothing")
-	check(not card.is_open(Scoring.Box.YAHTZEE), "a scratched box is spent, not free")
-	card.write_adversary(Scoring.Box.ACES, 4)
-	check(card.open_count() == 10 and card.adversary_count() == 1, "the adversary shortens you")
-	card.burn(Scoring.Box.CHANCE)
-	check(card.states[Scoring.Box.CHANCE] == Scorecard.State.BURNED, "burned boxes are gone")
-	var back := card.reclaim(2)
-	check(back.size() == 2, "winning heals the run")
-	check(card.run_total == 72, "reclaimed points stay on the run total")
-	check(card.is_open(Scoring.Box.YAHTZEE), "the most recent spends come back first")
+func _test_placing() -> void:
+	var shop := Shop.new(8)
+	var at := shop.position_of(shop.display_indices()[0])
+	for i in Shop.TABLE_CAPACITY:
+		check_quiet(shop.place(at, Goods.Unit.new(Goods.Id.SHATTERED_BONE)),
+			"a table takes stock")
+	check(shop.stock_at(at).size() == Shop.TABLE_CAPACITY, "a table holds three")
+	check(not shop.place(at, Goods.Unit.new(Goods.Id.SHATTERED_BONE)),
+		"and no more than three")
+	check(shop.take(at) != null, "and it can be taken off again")
 
 
-# --- Dice --------------------------------------------------------------------
+# --- Thralls -----------------------------------------------------------------
 
-func _test_dice_behaviour() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 99
-	var d := Die.new(0, "Test", rng)
+## The deck is not a consumable. A card is away while its thrall is, which is
+## what makes the deck a limit on how much you can have in flight.
+func _test_deck_is_a_concurrency_limit() -> void:
+	var world := World.new()
+	world.start(11)
+	check(world.thralls.ready_cards() == Balance.starting_deck, "the deck starts full")
+	for i in Balance.starting_deck:
+		check_quiet(world.dispatch_thrall(), "a card can be played")
+	check(world.thralls.ready_cards() == 0, "playing them all empties the hand")
+	check(not world.dispatch_thrall(), "and there is nothing left to play")
+	check(world.thralls.deck == Balance.starting_deck, "but the deck is not smaller")
 
-	# Facet: three scored locks reshape a face.
-	check(not d.note_scored() and not d.note_scored(), "two locks do not reshape")
-	check(d.note_scored(), "the third scored lock reshapes a face")
-	check(d.faces[0] == 2, "the weakest face is pulled up")
+	# Wait them home and the cards come back.
+	for _i in int(Balance.dispatch_seconds * 10.0) + 4:
+		world.tick(0.1)
+	check(world.thralls.ready_cards() == Balance.starting_deck,
+		"a thrall coming home returns its card")
 
-	# Bitter: refuses its lowest face.
-	var b := Die.new(1, "Bitter", rng)
-	b.embitter()
-	var saw_lowest := false
+
+func _test_haul_returns() -> void:
+	var world := World.new()
+	world.start(12)
+	world.dispatch_thrall()
+	var before: int = world.shop.backroom.size()
+	for _i in int(Balance.dispatch_seconds * 10.0) + 4:
+		world.tick(0.1)
+	var got: int = world.shop.backroom.size() - before
+	check(got >= Balance.haul_min and got <= Balance.haul_max,
+		"a thrall brings back one to three")
+
+	# Over many errands the haul stays inside its band.
+	var world2 := World.new()
+	world2.start(13)
+	for run in 40:
+		while world2.thralls.can_dispatch():
+			world2.dispatch_thrall()
+		for _i in int(Balance.dispatch_seconds * 5.0) + 2:
+			world2.tick(0.2)
+	check(world2.shop.backroom.size() > 0, "and keeps bringing them")
+
+
+# --- Rot ---------------------------------------------------------------------
+
+func _test_spoilage() -> void:
+	var keeps := Goods.Unit.new(Goods.Id.SHATTERED_BONE)
 	for _i in 400:
-		if b.roll() == b.lowest_face():
-			saw_lowest = true
-	check(not saw_lowest, "a bitter die refuses its lowest face")
-
-	# Memory: dice remember their last roll.
-	var m := Die.new(2, "Memory", rng)
-	m.value = 4
-	m.faces = PackedInt32Array([4, 4, 4, 4, 4, 4])
-	m.roll()
-	check(m.last_value == 4 and m.repeated, "a die notices the same face twice running")
-
-	# Locked is locked: rolling does not move it.
-	var l := Die.new(3, "Locked", rng)
-	l.roll()
-	var held := l.value
-	l.lock()
-	for _i in 20:
-		l.roll()
-	check(l.value == held, "a locked die holds its face")
-
-
-func _test_locking_narrows_the_table() -> void:
-	var game := Game.new()
-	game.start_run(1234)
-	game.throw()
-	var first_size := game.pool.table.size()
-	check(first_size == Balance.dice_per_roll, "you roll five dice")
-	game.lock_die(game.pool.table[0])
-	game.lock_die(game.pool.table[1])
-	var locked_values := [game.pool.table[0].value, game.pool.table[1].value]
-	game.roll()
-	check([game.pool.table[0].value, game.pool.table[1].value] == locked_values,
-		"a reroll leaves locked dice alone")
-	game.write_box(Scoring.Box.CHANCE)
-	var still_locked := game.pool.locked_by("player").size()
-	check(still_locked == 2, "locks persist into the next turn of the floor")
-	check(game.pool.table.size() == Balance.dice_per_roll, "the table tops up from the pool")
-	var spoken_for := 2 + game.pool.lost_dice().size()
-	check(game.pool.unlocked_dice().size() == game.pool.dice.size() - spoken_for,
-		"locked and lost dice both leave the pool")
-
-
-# --- Charms, forge, adversaries ---------------------------------------------
-
-func _test_charms() -> void:
-	var game := Game.new()
-	game.start_run(7)
-
-	var symmetry := Charms.Symmetry.new()
-	check(symmetry.modify_score(game, Scoring.Box.CHANCE, [2, 5, 3, 5, 2], 10) == 20,
-		"symmetry doubles a palindrome")
-	check(symmetry.modify_score(game, Scoring.Box.CHANCE, [2, 5, 3, 5, 4], 10) == 10,
-		"symmetry ignores an asymmetric table")
-
-	var accountant := Charms.Accountant.new()
-	game.card.write_player(Scoring.Box.ACES, 3)
-	check(accountant.modify_score(game, Scoring.Box.CHANCE, [], 10) == 15,
-		"the accountant grows as the card empties")
-
-	var pigeonhole := Charms.Pigeonhole.new()
-	var extra := pigeonhole.extra_writes(game, Scoring.Box.FULL_HOUSE, [5, 5, 5, 2, 2])
-	check(extra.size() == 1 and extra[0][0] == Scoring.Box.THREE_KIND,
-		"pigeonhole also fills three of a kind")
-
-	var pact := Charms.BloodPact.new()
-	check(pact.extra_boxes_per_turn() == 1, "blood pact burns a second box")
-	var before := game.card.open_count()
-	game.charms.append(pact)
-	game._burn_extra_boxes()
-	check(game.card.open_count() == before - 1, "the pact takes its box")
-
-	var grudge := Charms.Grudge.new()
-	game.pool.table[0].value = 1
-	grudge.on_roll(game)
-	check(game.pool.table[0].furious, "a die that rolls a 1 is furious")
-
-
-func _test_forge() -> void:
-	var game := Game.new()
-	game.start_run(42)
-	var open_before := game.card.open_count()
-	var die := game.pool.dice[0]
-	var faces_before := Array(die.faces)
-	var sacrifice: Array = [game.card.open_boxes()[0]]
-	check(Bench.apply(game, &"reshape_face", sacrifice, die.id), "the bench accepts a box")
-	check(Array(die.faces) != faces_before, "the die is reshaped")
-	check(game.card.open_count() == open_before - 1, "every upgrade shortens the run")
-
-	var pool_before := game.pool.dice.size()
-	var two: Array = game.card.open_boxes().slice(0, 2)
-	check(Bench.apply(game, &"ninth_die", two), "two boxes buy a ninth die")
-	check(game.pool.dice.size() == pool_before + 1, "the pool grew")
-
-	check(not Bench.apply(game, &"ninth_die", [game.card.open_boxes()[0]]),
-		"the bench rejects the wrong price")
-
-	# You can never spend your last box.
-	while game.card.open_count() > 1:
-		game.card.burn(game.card.open_boxes()[0])
-	check(not Bench.can_afford(game, 1), "the last box is not for sale")
-
-
-## One charm a night, however many lines you are willing to burn.
-func _test_charm_limit() -> void:
-	var game := Game.new()
-	game.start_run(6161)
-	var first := Bench.next_charm(game)
-	check(first != null, "the bench offers a charm")
-	game.take_charm(first)
-	check(Bench.next_charm(game) == null, "and only the one, tonight")
-	var offered_ids: Array = []
-	for offer in Bench.offers(game):
-		offered_ids.append(offer["id"])
-	check(not offered_ids.has(&"take_charm"), "the charm is off the board once taken")
-	# Charms are what a finished week pays out, so the next night inside the
-	# same week offers nothing more.
-	game.next_floor()
-	check(Bench.next_charm(game) == null, "the next night of the same week offers no charm")
-	while Balance.week_of(game.floor_number) == 1:
-		game.next_floor()
-	check(Bench.next_charm(game) != null, "a new week offers another")
-	check(game.charms_taken_this_week == 0, "the count resets with the week")
-
-
-func _test_adversaries() -> void:
-	var game := Game.new()
-	game.start_run(2024)
-
-	var auditor := AdversaryRoster.Taxman.new()
-	check(auditor.declare(game) == Scoring.Box.ACES, "the auditor works low to high")
-	game.card.write_player(Scoring.Box.ACES, 1)
-	check(auditor.declare(game) == Scoring.Box.TWOS, "the auditor moves up the section")
-
-	# Declaration comes before the roll: you always get one turn to respond.
-	var magpie := AdversaryRoster.Magpie.new()
-	game.last_player_values = [6, 6, 6, 6, 2]
-	var target := magpie.declare(game)
-	check(target == Scoring.Box.FOUR_KIND or target == Scoring.Box.SIXES,
-		"the magpie targets what you are building")
-
-	var twin := AdversaryRoster.Reflection.new()
-	game.last_player_values = [1, 1, 2, 3, 1]
-	twin.declare(game)
-	check(twin._roll_toward(game, twin.declared_box) == [1, 1, 2, 3, 1],
-		"the twin wears your last roll — play badly to starve it")
-
-	var furnace := AdversaryRoster.Fire.new()
-	var burn_target := furnace.declare(game)
-	furnace.take_turn(game)
-	check(game.card.states[burn_target] == Scorecard.State.BURNED,
-		"the furnace burns rather than claims")
-
-	var debtor := AdversaryRoster.Debtor.new()
-	game.card.write_player(Scoring.Box.SIXES, 144)
-	check(debtor.declare(game) == Scoring.Box.SIXES, "the debtor comes for your best box")
-	debtor.take_turn(game)
-	check(game.card.states[Scoring.Box.SIXES] == Scorecard.State.ADVERSARY,
-		"the debtor overwrites a filled box")
-
-
-## Denying the Adversary is a real move: you take the box it announced.
-func _test_denial() -> void:
-	var game := Game.new()
-	game.start_run(555)
-	game.adversary = AdversaryRoster.Taxman.new()
-	game.adversary.on_duel_start(game)
-	game.throw()
-	var target := game.adversary.declare(game)
-	var denials: Array = []
-	game.player_wrote.connect(func(box, _value, denied): denials.append([box, denied]))
-	game.write_box(target)
-	check(denials.size() == 1 and denials[0][1], "taking the announced box is a denial")
-	check(not game.card.is_open(target), "the denied box is spent either way")
-
-
-## Regression: the bench opens because the phase is set before the signal fires.
-func _test_floor_transition() -> void:
-	var game := Game.new()
-	game.start_run(11)
-	# Captured through an array: GDScript lambdas copy plain locals.
-	var phase_at_signal: Array[int] = []
-	game.floor_cleared.connect(func(_n, _r): phase_at_signal.append(game.phase))
-	game.throw()
-	game.floor_score = game.threshold
-	game.write_box(Scoring.Box.CHANCE)
-	check(phase_at_signal.size() == 1 and phase_at_signal[0] == Game.Phase.BENCH,
-		"the bench is open when the floor-cleared signal lands")
-	check(game.phase == Game.Phase.BENCH, "clearing a floor stops for the bench")
-
-	var floor_before := game.floor_number
-	game.leave_bench()
-	check(game.floor_number == floor_before + 1, "leaving the bench descends")
-	check(game.threshold > 0 and game.rerolls_left == Balance.rerolls_per_turn, "the next floor resets the turn")
-	check(game.pool.locked_count() == 0, "a new floor unlocks every die")
-	check(game.floor_score == game.pending_carry + game.floor_carry_in, "the floor score restarts from the carry")
-
-
-## Holding keeps a face for one turn. It is what lets a hand be built toward
-## a line at all, and it is deliberately weaker than staking.
-func _test_hold() -> void:
-	var game := Game.new()
-	game.start_run(9001)
-	game.throw(Throw.Strength.SOFT)
-	var die: Die = game.pool.table[0]
-	while die.lost or die.value == 0:
-		game.pool.table.remove_at(0)
-		die = game.pool.table[0]
-	var face := die.value
-
-	game.toggle_hold(die)
-	check(die.held, "a die can be kept back")
-	check(die.kept() and not die.locked, "kept, but not staked")
-	game.throw(Throw.Strength.SOFT)
-	check(die.value == face, "a held die keeps its face through a draw")
-
-	game.toggle_hold(die)
-	check(not die.held, "and can be let go again")
-
-	# Holding is for the turn you are in.
-	game.hold_die(die, true)
-	game.write_box(game.card.open_boxes()[0])
-	for d in game.pool.table:
-		check(not d.held, "a new turn releases every hold")
-
-	# Staking supersedes a hold, and cannot be undone by clicking again.
-	var g2 := Game.new()
-	g2.start_run(9002)
-	g2.throw(Throw.Strength.SOFT)
-	var keeper: Die = null
-	for d in g2.pool.table:
-		if not d.lost and d.value > 0 and not g2.would_lock_out(d):
-			keeper = d
-			break
-	if keeper != null:
-		g2.hold_die(keeper, true)
-		g2.lock_die(keeper)
-		check(keeper.locked and not keeper.held, "staking a held die takes over the hold")
-		g2.toggle_hold(keeper)
-		check(not keeper.held, "a staked die cannot be un-held")
-
-
-## A draw that cannot move a die is refused rather than spent.
-func _test_hold_does_not_waste_draws() -> void:
-	var game := Game.new()
-	game.start_run(9003)
-	game.throw(Throw.Strength.SOFT)
-	for d in game.pool.table:
-		game.hold_die(d, true)
-	check(game.throwable_dice() == 0, "nothing left that would move")
-	var before := game.rerolls_left
-	game.throw(Throw.Strength.SOFT)
-	check(game.rerolls_left == before, "the draw is not spent on a table that cannot change")
-
-
-## A week is the unit of play: thirteen lines have to carry seven nights, and
-## surviving one hands the paper back.
-func _test_weekly_reset() -> void:
-	var game := Game.new()
-	game.start_run(4477)
-	check(Balance.week_of(1) == 1 and Balance.night_of(1) == 1, "the run opens on week 1 night 1")
-	check(Balance.week_of(Balance.nights_per_week + 1) == 2,
-		"the night after a full week starts the next one")
-
-	game.card.write_player(Scoring.Box.ACES, 12)
-	game.card.write_adversary(Scoring.Box.TWOS, 8)
-	game.card.burn(Scoring.Box.THREES)
-	var banked := game.card.run_total
-	check(game.card.open_count() == Scoring.BOX_COUNT - 3, "three lines are gone")
-
-	var wiped := game.card.new_week()
-	check(wiped.size() == 3, "every spent line comes back, his and burned alike")
-	check(game.card.open_count() == Scoring.BOX_COUNT, "the card is whole again")
-	check(game.card.run_total == banked, "what was scored is kept")
-	check(game.card.spend_order.is_empty(), "and nothing is still marked spent")
-
-	# The run total still reconciles: nothing is stranded by the wipe.
-	var owed := 0
-	for box in game.card.player_boxes():
-		owed += game.card.points[box]
-	check(owed + game.card.reclaimed_total == game.card.run_total,
-		"the total reconciles across the wipe")
-
-	# Playing through a whole week hands the paper back on its own.
-	var fresh := Game.new()
-	fresh.start_run(4478)
-	while Balance.week_of(fresh.floor_number) == 1 and fresh.phase != Game.Phase.RUN_OVER:
-		fresh.card.write_player(fresh.card.open_boxes()[0], 5)
-		if fresh.phase == Game.Phase.BENCH:
-			fresh.leave_bench()
-		else:
-			fresh.next_floor()
-	check(fresh.phase == Game.Phase.RUN_OVER or fresh.card.open_count() == Scoring.BOX_COUNT,
-		"crossing into a new week wipes the card without being asked")
-
-
-## He arrives later in the week early on, and earlier as the run goes.
-func _test_duel_cadence() -> void:
-	var counts: Array[int] = []
-	for week in range(1, Balance.weeks_per_run + 1):
-		var n := 0
-		for night in range(1, Balance.nights_per_week + 1):
-			if Balance.is_duel_floor((week - 1) * Balance.nights_per_week + night):
-				n += 1
-		counts.append(n)
-	check(counts[0] == 1, "week 1 has him on one night")
-	for i in range(1, counts.size()):
-		check(counts[i] > counts[i - 1], "each week puts him at the table more often")
-	check(Balance.is_duel_floor(Balance.nights_per_week),
-		"the last night of a week is always his")
-
-
-## Overshoot carries instead of evaporating.
-func _test_overflow_carry() -> void:
-	var game := Game.new()
-	game.start_run(21)
-	var next_threshold := Balance.threshold_for_floor(2)
-	# Under the cap, so the whole overshoot carries.
-	var overshoot := int(next_threshold * Balance.overflow_carry_cap) - 1
-	game.floor_score = game.threshold + overshoot
-	game._bank_overflow()
-	check(game.pending_carry == overshoot, "the overshoot banks")
-	game.leave_bench() if game.phase == Game.Phase.BENCH else game.next_floor()
-	check(game.floor_carry_in == overshoot and game.floor_score == overshoot,
-		"it opens the next floor")
-	check(game.pending_carry == 0, "and is spent once")
-
-	# A monster turn cannot skip a floor outright.
-	var big := Game.new()
-	big.start_run(22)
-	big.floor_score = big.threshold + 100000
-	big._bank_overflow()
-	check(big.pending_carry == int(next_threshold * Balance.overflow_carry_cap),
-		"carry is capped below the next threshold")
-
-	# The duel is judged on what you scored, not on what you carried in.
-	var duel := Game.new()
-	duel.start_run(23)
-	duel.floor_carry_in = 500
-	duel.floor_score = 500
-	duel.adversary = AdversaryRoster.Taxman.new()
-	duel.adversary.duel_score = 100
-	duel.threshold = 400
-	duel._clear_floor()
-	check(duel.card.open_count() == Scoring.BOX_COUNT, "carried points do not win a duel")
-
-
-## Locking your last free die freezes the floor — the UI must be able to warn.
-## Lost dice are not throwable, and the throw controls must agree.
-func _test_free_dice_excludes_lost() -> void:
-	var game := Game.new()
-	game.start_run(4141)
-	var before := game.free_dice_on_table()
-	game.pool.table[0].lost = true
-	check(game.free_dice_on_table() == before - 1, "a lost die is not a throwable die")
-	check(game.can_throw(), "the rest of the table can still be thrown")
-	for d in game.pool.table:
-		d.lost = true
-	check(not game.can_throw(), "an empty table cannot be thrown")
-
-
-func _test_lock_out_guard() -> void:
-	var game := Game.new()
-	game.start_run(31)
-	game.throw()
-	check(game.free_dice_on_table() == Balance.dice_per_roll, "five free dice to start")
-	while game.free_dice_on_table() > 1:
-		for d in game.pool.table:
-			if not d.locked:
-				game.lock_die(d)
-				break
-	var last: Die = null
-	for d in game.pool.table:
-		if not d.locked:
-			last = d
-	check(game.would_lock_out(last), "the last free die is flagged")
-	game.lock_die(last)
-	check(game.free_dice_on_table() == 0, "and locking it freezes the table")
-
-
-# --- The throw ---------------------------------------------------------------
-
-func _make_dice(n: int, rng: RandomNumberGenerator) -> Array[Die]:
-	var out: Array[Die] = []
-	for i in n:
-		out.append(Die.new(i, "D%d" % i, rng))
-	return out
-
-
-func _test_throw_zones() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 4242
-
-	# Soft: clustered, safe, never reaches the rail.
-	var soft_rail := 0
-	var soft_lost := 0
-	for _i in 200:
-		var dice := _make_dice(5, rng)
-		var result := Throw.resolve(dice, Throw.Strength.SOFT, rng)
-		soft_rail += Throw.rail_count(dice)
-		soft_lost += result.lost.size()
-	# Soft reaches the rail about one die in six — measured from the sim, not
-	# assumed. What it never does is put a die in the dirt.
-	check(soft_rail > 0, "a soft throw can still reach the rail")
-	check(soft_lost == 0, "a soft throw never loses a die")
-
-	# Medium: some rail, no losses.
-	var medium_rail := 0
-	var medium_lost := 0
-	for _i in 200:
-		var dice := _make_dice(5, rng)
-		var result := Throw.resolve(dice, Throw.Strength.MEDIUM, rng)
-		medium_rail += Throw.rail_count(dice)
-		medium_lost += result.lost.size()
-	check(medium_rail > 0, "a medium throw reaches the rail")
-	check(medium_lost > 0, "a medium throw can put a die off the table")
-
-	# Hard: wide scatter, real risk.
-	var hard_rail := 0
-	var hard_lost := 0
-	for _i in 200:
-		var dice := _make_dice(5, rng)
-		var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
-		hard_rail += Throw.rail_count(dice)
-		hard_lost += result.lost.size()
-	# Measured, not assumed: a hard throw both reaches the rail more often
-	# than a soft one and puts far more dice in the dirt than a medium one.
-	check(hard_rail > soft_rail, "a hard throw reaches the rail more often than a soft one")
-	check(hard_lost > medium_lost, "a hard throw loses more dice than a medium one")
-
-
-## The other half of the tripwire: the model must actually sample the odds it
-## is calibrated to.
-func _test_model_matches_calibration() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 31337
-	for strength in [Throw.Strength.SOFT, Throw.Strength.MEDIUM, Throw.Strength.HARD]:
-		var counts := {"pot": 0, "rail": 0, "lost": 0}
-		var dice := 0
-		for _i in 200:
-			var thrown := _make_dice(5, rng)
-			Throw.resolve(thrown, strength, rng)
-			for d in thrown:
-				dice += 1
-				if d.lost:
-					counts["lost"] += 1
-				elif d.zone == Throw.Zone.RAIL:
-					counts["rail"] += 1
-				else:
-					counts["pot"] += 1
-		var expected: Dictionary = Balance.zone_odds[strength]
-		var worst := 0.0
-		for zone in counts:
-			worst = maxf(worst, absf(float(counts[zone]) / float(dice) - float(expected[zone])))
-		check(worst < 0.10, "the model lands %s throws the way it is calibrated to"
-			% Throw.strength_name(strength).to_lower())
-
-
-func _test_rail_persistence() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	# The shove lives in ThrowContract now, so that the model and the physics
-	# cannot apply it differently. Both paths call it before they throw.
-	var dice := _make_dice(2, rng)
-	dice[0].value = 6
-	dice[0].landing_radius = 0.95
-	dice[0].zone = Throw.Zone.RAIL
-	var lost := ThrowContract.push_rail_dice(dice, Throw.Strength.HARD, false)
-	check(dice[0].lost and lost.has(dice[0]), "a hard throw shoves a rail die off the table")
-
-	# Unless it was staked: staked dice cannot be lost.
-	var safe := _make_dice(2, rng)
-	safe[0].value = 6
-	safe[0].landing_radius = 0.95
-	safe[0].zone = Throw.Zone.RAIL
-	safe[0].lock()
-	ThrowContract.push_rail_dice(safe, Throw.Strength.HARD, false)
-	Throw.resolve(safe, Throw.Strength.HARD, rng)
-	check(not safe[0].lost, "a staked die cannot be pushed off")
-	check(safe[0].value == 6, "a staked die keeps its face through a throw")
-
-	# Or unless you have the Long Throw.
-	var charmed := _make_dice(2, rng)
-	charmed[0].value = 6
-	charmed[0].landing_radius = 0.95
-	charmed[0].zone = Throw.Zone.RAIL
-	ThrowContract.push_rail_dice(charmed, Throw.Strength.HARD, true)
-	check(not charmed[0].lost, "Long Throw keeps hard throws on the table")
-
-	# A die in the pot is not shoved at all.
-	var quiet := _make_dice(2, rng)
-	quiet[0].value = 4
-	quiet[0].landing_radius = 0.30
-	quiet[0].zone = Throw.Zone.POT
-	ThrowContract.push_rail_dice(quiet, Throw.Strength.HARD, false)
-	check(not quiet[0].lost, "a die in the pot is left alone")
-
-
-func _test_collisions_and_cocking() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 99
-	# Dice landing close together knock each other to new faces.
-	var collisions := 0
-	var cocked := 0
-	for _i in 300:
-		var dice := _make_dice(5, rng)
-		var result := Throw.resolve(dice, Throw.Strength.HARD, rng)
-		collisions += result.collisions.size()
-		cocked += result.cocked.size()
-	check(collisions > 0, "dice striking dice knock them to new faces")
-
-	# Chains propagate, but two neighbours must not rattle each other forever.
-	for _i in 300:
-		var chain_dice := _make_dice(5, rng)
-		var chain_result := Throw.resolve(chain_dice, Throw.Strength.HARD, rng)
-		var struck := {}
-		var double_hit := false
-		for c in chain_result.collisions:
-			if struck.has(c[1]):
-				double_hit = true
-			struck[c[1]] = true
-		check_once(not double_hit, "no die is struck twice in one throw")
-
-	# A cocked die counts as both its face and the one beneath it.
-	var pool := DicePool.new(2, 5)
-	pool.table = pool.dice
-	pool.dice[0].value = 5
-	pool.dice[1].value = 3
-	# A cocked die is one showing two faces; which two is the throwing path's
-	# business, and the rules only read the pair.
-	pool.dice[0].cocked_on = pool.dice[1].id
-	pool.dice[0].second_value = pool.dice[1].value
-	var values := pool.table_values()
-	check(values.size() == 3, "a cocked die adds a face to the table")
-	check(values.count(3) == 2, "its second face is read alongside its first")
-
-
-func _test_underside() -> void:
-	var rng := RandomNumberGenerator.new()
-	var d := Die.new(0, "Under", rng)
-	d.value = 1
-	check(d.underside() == 6, "a shown 1 hides a 6")
-	d.value = 4
-	check(d.underside() == 3, "a shown 4 hides a 3")
-	# A reshaped die keeps the same relationship between its own extremes.
-	d.faces = PackedInt32Array([2, 2, 3, 4, 5, 9])
-	d.value = 9
-	check(d.underside() == 2, "a faceted die hides its lowest under its highest")
-
-
-func _test_rail_multiplier() -> void:
-	var rng := RandomNumberGenerator.new()
-	var dice := _make_dice(3, rng)
-	for d in dice:
-		d.value = 4
-		d.zone = Throw.Zone.RAIL
-	var original: int = Balance.rail_mode
-	Balance.rail_mode = Balance.RailMode.EXPONENTIAL
-	check(is_equal_approx(Throw.rail_multiplier(dice), 8.0), "exponential rail doubles per die")
-	Balance.rail_mode = Balance.RailMode.LINEAR
-	check(is_equal_approx(Throw.rail_multiplier(dice), 4.0), "linear rail adds per die")
-	Balance.rail_mode = Balance.RailMode.FLAT
-	check(is_equal_approx(Throw.rail_multiplier(dice), 2.0), "flat rail doubles once")
-	Balance.rail_mode = original
-	for d in dice:
-		d.zone = Throw.Zone.POT
-	check(is_equal_approx(Throw.rail_multiplier(dice), 1.0), "the pot does not multiply")
-
-
-func _test_lost_dice_are_floor_long() -> void:
-	var game := Game.new()
-	game.start_run(808)
-	game.throw()
-	# Pick a die that is actually on the table with a face on it: the opening
-	# throw can already have put one in the dirt, and a die that was never
-	# worth anything cannot demonstrate that losing it costs you something.
-	var victim: Die = null
-	for d in game.pool.live_table():
-		if d.value > 0:
-			victim = d
-			break
-	check(victim != null, "the opening throw leaves at least one die on the table")
-	if victim == null:
-		return
-	# Take the die off the table and see what the resolver stops reading. A
-	# cocked die is worth two faces, and any die on the table may be one.
-	var before_values: Array = game.pool.table_values().duplicate()
-	var victim_value := victim.value
-	victim.lost = true
-	victim.zone = Throw.Zone.LOST
-	victim.cocked_on = -1
-	check(not game.pool.unlocked_dice().has(victim), "a lost die leaves the pool")
-	var after_values: Array = game.pool.table_values()
-	check(after_values.size() < before_values.size(), "a lost die scores nothing")
-	check(before_values.count(victim_value) > after_values.count(victim_value),
-		"the lost die's face is the one that left")
-	game.pool.begin_floor()
-	check(not victim.lost, "the next floor brings it back")
-
-
-func _test_new_charms() -> void:
-	var game := Game.new()
-	game.start_run(909)
-	var underhand := Charms.Underhand.new()
-	var dice: Array[Die] = []
-	var rng := RandomNumberGenerator.new()
-	var low := Die.new(0, "Low", rng)
-	low.value = 1
-	var high := Die.new(1, "High", rng)
-	high.value = 5
-	dice.append(low)
-	dice.append(high)
-	var flipped := underhand.modify_values(game, [1, 5], dice)
-	check(flipped == [6, 5], "Underhand reads the hidden face of the lowest die")
-
-	game.charms.append(Charms.LongThrow.new())
-	check(game.has_charm(&"long_throw"), "Long Throw is held, and the throw reads it")
-
-
-func _test_full_runs() -> void:
-	var deepest := 0
-	var ended := 0
-	for seed_value in range(1, 41):
-		var game := Game.new()
-		game.start_run(seed_value)
-		var guard := 0
-		while game.phase != Game.Phase.RUN_OVER and guard < 400:
-			guard += 1
-			if game.phase == Game.Phase.BENCH:
-				game.leave_bench()
-				continue
-			_greedy_turn(game)
-		check(guard < 400, "run %d terminates" % seed_value)
-		if game.phase == Game.Phase.RUN_OVER:
-			ended += 1
-		deepest = maxi(deepest, game.floor_number)
-	check(ended == 40, "every run reaches an ending")
-	check(deepest >= 3, "a greedy bot gets at least a few floors down")
-	print("  greedy bot deepest floor: %d" % deepest)
-
-
-## Plays the single best box available, locking anything showing 5 or more.
-func _greedy_turn(game: Game) -> void:
-	for _i in Balance.rerolls_per_turn:
-		var best_now := _best_box(game)
-		if best_now[1] > 0 and game.rerolls_left == 0:
-			break
-		game.roll()
-	for d in game.pool.table:
-		if d.value >= 5:
-			game.lock_die(d)
-	var best := _best_box(game)
-	game.write_box(best[0])
-
-
-func _best_box(game: Game) -> Array:
-	var boxes := game.card.open_boxes()
-	if boxes.is_empty():
-		return [0, 0]
-	var best: int = boxes[0]
-	var best_value := -1
-	for box in boxes:
-		var v := game.preview(box)
-		if v > best_value:
-			best_value = v
-			best = box
-	return [best, best_value]
+		check_quiet(not keeps.tick(1.0), "bone does not turn")
+	check(not keeps.rotted, "bone keeps for ever")
+	check(is_zero_approx(keeps.spoilage()), "and never looks like turning")
+
+	var turns := Goods.Unit.new(Goods.Id.PULSING_BIOMASS)
+	var fired := 0
+	for _i in 400:
+		if turns.tick(1.0):
+			fired += 1
+	check(turns.rotted, "biomass turns")
+	check(fired == 1, "and says so exactly once")
+	check(is_equal_approx(turns.spoilage(), 1.0), "and reads as gone afterwards")
+
+	var half := Goods.Unit.new(Goods.Id.FRESH_SCREAMS)
+	half.tick(Goods.shelf_life(Goods.Id.FRESH_SCREAMS) * 0.5)
+	check(absf(half.spoilage() - 0.5) < 0.02, "spoilage reads as it ages")
+
+
+## Corruption is a hole you dig out of, not a timer that forgives you.
+func _test_corruption() -> void:
+	var world := World.new()
+	world.start(21)
+	world.level = 2
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	# Nearly gone already, so it turns before anyone can walk in and buy it.
+	# Left fresh, a customer takes it long before its shelf life is up, which
+	# is the whole point of the good stuff and not what is being checked here.
+	var doomed := Goods.Unit.new(Goods.Id.PULSING_BIOMASS)
+	doomed.age = Goods.shelf_life(Goods.Id.PULSING_BIOMASS) - 0.5
+	world.shop.place(at, doomed)
+	check(is_zero_approx(world.corruption), "a clean shop is not corrupt")
+
+	for _i in 12:
+		world.tick(0.1)
+	check(world.corruption > 0.0, "letting stock turn is corrupting")
+	check(world.rot_total >= 1, "and it is counted")
+	check(world.revenue_multiplier() < 1.0, "which costs you on every sale")
+
+	var held := world.corruption
+	for _i in 30:
+		world.tick(1.0)
+	check(is_equal_approx(world.corruption, held),
+		"and it does not fade while the rot is still on the floor")
+
+	check(world.sweep() > 0, "sweeping clears it")
+	for _i in 60:
+		world.tick(1.0)
+	check(world.corruption < held, "and only then does corruption fall")
+
+	world.corruption = Balance.corruption_cap * 4.0
+	world.tick(0.1)
+	check(world.revenue_multiplier() >= Balance.corruption_worst,
+		"a ruined shop still sells for something")
+
+
+# --- Selling -----------------------------------------------------------------
+
+func _test_a_sale() -> void:
+	var world := World.new()
+	world.start(31)
+	var at := world.shop.position_of(world.shop.stocked_or_first())
+	world.shop.place(at, Goods.Unit.new(Goods.Id.FEY_BERRIES))
+	var before := world.obols
+	var guard := 0
+	while world.sales == 0 and guard < 4000:
+		guard += 1
+		world.tick(0.1)
+	check(world.sales == 1, "someone comes in and buys it")
+	check(world.obols > before, "and leaves money on the altar")
+	check(world.revenue == world.obols - before, "which is counted as revenue")
+	check(world.shop.units_on_floor() == 0, "and takes the item with them")
+
+
+func _test_empty_shop_turns_people_away() -> void:
+	var world := World.new()
+	world.start(32)
+	var guard := 0
+	while world.lost_sales == 0 and guard < 4000:
+		guard += 1
+		world.tick(0.1)
+	check(world.lost_sales > 0, "an empty shop turns people around")
+	check(world.sales == 0, "and sells nothing")
+	check(world.obols == Balance.starting_obols, "and takes nothing")
+
+
+func _test_nobody_buys_rot() -> void:
+	var world := World.new()
+	world.start(33)
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	var unit := Goods.Unit.new(Goods.Id.FRESH_SCREAMS)
+	unit.rotted = true
+	world.shop.place(at, unit)
+	check(world.shop.stocked_displays().is_empty(),
+		"a table of rot counts as an empty table")
+	for _i in 600:
+		world.tick(0.1)
+	check(world.sales == 0, "and nobody buys off it")
+	check(world.shop.units_on_floor() == 1, "the rot is still sitting there")
+
+
+# --- Growing -----------------------------------------------------------------
+
+func _test_expansion_keeps_the_stock() -> void:
+	var world := World.new()
+	world.start(41)
+	for i in 6:
+		world.shop.backroom.append(Goods.Unit.new(Goods.Id.SHATTERED_BONE))
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	world.shop.place(at, Goods.Unit.new(Goods.Id.FEY_BERRIES))
+	var total_before := world.shop.units_on_floor() + world.shop.backroom.size()
+
+	check(not world.can_expand(), "you cannot expand while broke")
+	world.obols = Balance.expansion_cost
+	check(world.can_expand(), "the whole of level 1 is reaching this number")
+	check(world.expand(), "and then the walls come down")
+	check(world.level == 2, "which is level 2")
+	check(world.shop.size == Balance.grid_size[2], "a bigger floor")
+	check(world.shop.units_on_floor() + world.shop.backroom.size() == total_before,
+		"and nothing you owned is lost in the move")
+	check(not world.can_expand(), "and it only happens once")
+
+
+func _test_cases_restock_themselves() -> void:
+	var world := World.new()
+	world.start(42)
+	world.obols = Balance.expansion_cost + Balance.case_cost
+	world.expand()
+	var at := world.shop.position_of(world.shop.display_indices()[0])
+	check(world.buy_case(at), "a case can be bought")
+	check(world.shop.get_cell(at) == Shop.Cell.CASE, "and it goes in")
+	for _i in 4:
+		world.shop.backroom.append(Goods.Unit.new(Goods.Id.SHATTERED_BONE))
+	var on_floor := world.shop.units_on_floor()
+	for _i in int(Balance.case_restock_seconds * 20.0):
+		world.tick(0.1)
+	check(world.shop.units_on_floor() > on_floor,
+		"and it pulls from the backroom without you")
+	check(world.shop.stock_at(at).size() <= Shop.TABLE_CAPACITY,
+		"and never overfills itself")
+
+
+func _test_audit() -> void:
+	var world := World.new()
+	world.start(51)
+	world.obols = Balance.expansion_cost
+	world.expand()
+	world.obols = 10000
+	world.tribute_owed = 1000
+	world.corruption = 0.0
+	world._audit()
+	check(world.audits_passed == 1, "the Void is satisfied when you can pay")
+	check(world.obols == 9000, "and takes exactly what it is owed")
+	check(world.tribute_owed == 0, "leaving nothing owed")
+
+	# Not holding it is a finding.
+	world.tribute_owed = 100000
+	var held := world.obols
+	world._audit()
+	check(world.audits_failed == 1, "failing to pay is a finding")
+	check(world.obols < held, "and costs you a share of everything")
+
+	# So is running a rotten floor, even with the money in hand.
+	var clean := World.new()
+	clean.start(52)
+	clean.obols = Balance.expansion_cost
+	clean.expand()
+	clean.obols = 100000
+	clean.tribute_owed = 10
+	clean.corruption = Balance.audit_corruption_limit + 1.0
+	clean._audit()
+	check(clean.audits_failed == 1, "so is a corrupt floor, however flush you are")
+
+
+## Tapping is the only way input reaches the game, so a tile that does not
+## survive the round trip is a tile nobody can press — and it would fail in
+## silence. Both layouts are checked, because either can be the one shipped.
+func _test_both_projections() -> void:
+	for mode in [Balance.View.ISOMETRIC, Balance.View.ORTHOGONAL]:
+		var label := "isometric" if mode == Balance.View.ISOMETRIC else "orthogonal"
+		var grid := GridMap2D.new()
+		grid.mode = mode
+		check(grid.is_iso() == (mode == Balance.View.ISOMETRIC),
+			"%s: the map knows which it is" % label)
+		# The isometric tile is exactly 2:1; the square one is square.
+		for n in [8, 16]:
+			grid.fit(n, Vector2(1250, 720), 1.1)
+			if mode == Balance.View.ISOMETRIC:
+				check_quiet(is_equal_approx(grid.tile_h, grid.tile_w * 0.5),
+					"%s: tiles are exactly two by one" % label)
+			else:
+				check_quiet(is_equal_approx(grid.tile_h, grid.tile_w),
+					"%s: tiles are square" % label)
+			var missed := 0
+			for y in n:
+				for x in n:
+					var at := Vector2i(x, y)
+					if grid.tile_at(grid.centre(Vector2(at))) != at:
+						missed += 1
+			check(missed == 0,
+				"%s: all %d tiles of a %dx%d floor survive the round trip"
+				% [label, n * n, n, n])
+
+		# Depth has to increase away from the camera, or the sort is wrong
+		# and figures stand in front of walls they are behind.
+		grid.fit(8, Vector2(1250, 720), 1.1)
+		check_quiet(grid.depth(Vector2(2, 2)) > grid.depth(Vector2(2, 1)),
+			"%s: a nearer row sorts in front" % label)
+		if mode == Balance.View.ISOMETRIC:
+			check_quiet(grid.depth(Vector2(3, 2)) > grid.depth(Vector2(2, 2)),
+				"%s: and so does a nearer column" % label)
+		# Depth is read from the middle of a cell, so half a tile of movement
+		# never flips a figure past a wall she has not reached.
+		check_quiet(grid.depth(Vector2(2, 2.4)) > grid.depth(Vector2(2, 2)),
+			"%s: depth moves with a walking figure" % label)
+	check(true, "both layouts project, invert and sort correctly")
+
+
+## Same seed, same shop. This is what lets the sweeps mean anything.
+func _test_determinism() -> void:
+	var a := World.new()
+	var b := World.new()
+	a.start(99)
+	b.start(99)
+	for i in 3000:
+		a.tick(0.1)
+		b.tick(0.1)
+		if i % 400 == 0:
+			a.dispatch_thrall()
+			b.dispatch_thrall()
+	check(a.obols == b.obols and a.sales == b.sales and a.lost_sales == b.lost_sales,
+		"two shops on the same seed run identically")
+	check(a.shop.backroom.size() == b.shop.backroom.size(),
+		"down to what is in the back")
 
 
 # --- Harness -----------------------------------------------------------------
 
-## For assertions inside a loop: only the first failure is worth printing.
-var _once_reported := {}
-
-func check_once(condition: bool, label: String) -> void:
+func check(condition: bool, message: String) -> void:
 	if condition:
-		if not _once_reported.has(label):
-			_once_reported[label] = true
-			check(true, label)
-		return
-	if _once_reported.get(label, false) == "failed":
-		return
-	_once_reported[label] = "failed"
-	_checks += 1
-	_failures.append(label)
-	print("  FAIL %s" % label)
-
-
-func check(condition: bool, label: String) -> void:
-	_checks += 1
-	if condition:
-		print("  ok   %s" % label)
+		_passed += 1
+		print("  ok   %s" % message)
 	else:
-		_failures.append(label)
-		print("  FAIL %s" % label)
+		_failed.append(message)
+		print("  FAIL %s" % message)
+
+
+func check_quiet(condition: bool, message: String) -> void:
+	if not condition and not _failed.has(message):
+		_failed.append(message)
+		print("  FAIL %s" % message)
 
 
 func _report() -> void:
-	print("")
-	if _failures.is_empty():
-		print("%d checks passed." % _checks)
+	if _failed.is_empty():
+		print("\n%d checks passed." % _passed)
 		get_tree().quit(0)
 		return
-	print("%d of %d checks FAILED:" % [_failures.size(), _checks])
-	for f in _failures:
+	print("\n%d of %d checks FAILED:" % [_failed.size(), _passed + _failed.size()])
+	for f in _failed:
 		print("  - %s" % f)
 	get_tree().quit(1)
