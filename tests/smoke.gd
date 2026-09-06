@@ -46,6 +46,27 @@ func _ready() -> void:
 		_check(floor_data != null and floor_data.get_collision_polygons_count(0) == 0,
 			"and the floor tile does not")
 
+	# The tall tile is still in the tileset and still needs both origins set,
+	# even though props do the occluding — see README. A tile taller than its
+	# cell with neither set draws in the wrong place.
+	if source != null:
+		var post := source.get_tile_data(World.TILE_POST, 0)
+		_check(post != null, "the tall post tile exists")
+		if post != null:
+			_check(source.get_tile_size_in_atlas(World.TILE_POST) == Vector2i(1, 2),
+				"and is two atlas cells tall")
+			_check(post.texture_origin.y < 0,
+				"with a texture origin lifting it out of its cell")
+			_check(post.y_sort_origin > 0,
+				"and a y-sort origin putting its sort point at its base")
+
+	# Props are what the player sorts against, so they must be in the same
+	# Y-sorted container as the player and nowhere else.
+	_check(_world.props.y_sort_enabled, "the props container is Y-sorted")
+	_check(_world.player.get_parent() == _world.props,
+		"and the player is in it, or nothing sorts against them")
+	_check(_world.props.get_child_count() > 1, "and there are props in the room")
+
 	_check(_world.is_blocked(Vector2i(-1, 5)), "a wall cell reads as blocked")
 	_check(not _world.is_blocked(Vector2i(5, 5)), "and a floor cell does not")
 

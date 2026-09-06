@@ -16,6 +16,17 @@ func _ready() -> void:
 		await get_tree().process_frame
 	await _shot("01_start")
 	# Walk a little, so the camera has followed and the shot is not static.
+	# Stand in the cell *above* a post — not inside it, which is solid and
+	# would simply shove the player back out. From there the player's body
+	# overlaps the post's upper half and should be hidden behind it.
+	world.player.global_position = Vector2(6 * World.CELL + 32, 5 * World.CELL + 60)
+	for _i in 4:
+		await get_tree().physics_frame
+	await _shot("02_behind_a_post")
+	world.player.global_position = Vector2(6 * World.CELL + 32, 7 * World.CELL + 4)
+	for _i in 4:
+		await get_tree().physics_frame
+	await _shot("03_in_front_of_a_post")
 	Input.action_press("move_right")
 	Input.action_press("move_down")
 	for _i in 40:
@@ -24,7 +35,7 @@ func _ready() -> void:
 	Input.action_release("move_down")
 	for _i in 8:
 		await get_tree().process_frame
-	await _shot("02_walked")
+	await _shot("04_walked")
 	get_tree().quit(0)
 
 
