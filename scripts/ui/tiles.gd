@@ -1,70 +1,113 @@
 class_name Tiles
 extends RefCounted
-## The painted tileset, and what each cell of the shop is made of.
-##
-## Every floor texture is an isometric diamond whose top vertex sits at the
-## top of its own image; anything below the diamond is the tile's thickness
-## and hangs down over the row behind. So a tile is placed by its top vertex
-## and scaled to the tile width, and the art keeps whatever depth it was
-## drawn with.
+## Which texture the shop wants where, and the colour to use when there is
+## none. The game ships with no tiles: every slot falls back to a flat colour
+## so it runs and stays testable with nothing in assets/tiles at all.
 
-const FLOOR := {
-	&"planks": "res://assets/tiles/planks.png",
-	&"moss": "res://assets/tiles/moss.png",
-	&"grate": "res://assets/tiles/grate.png",
-	&"kintsugi": "res://assets/tiles/kintsugi.png",
-	&"white_tile": "res://assets/tiles/white_tile.png",
-	&"flesh_cobble": "res://assets/tiles/flesh_cobble.png",
-}
-
-const STANDING := {
-	&"log": "res://assets/tiles/log.png",
-	&"log_tall": "res://assets/tiles/log_tall.png",
-	&"wall_rust": "res://assets/tiles/wall_rust.png",
-	&"wall_door": "res://assets/tiles/wall_door.png",
-}
-
+## The theme in use. Swap this for one of your own — see TileTheme.
+static var theme: TileTheme = null
 static var _cache: Dictionary = {}
 
 
-## Loaded once. Reaching for a texture inside _draw every frame is both
-## wasteful and unreliable — the first draw can land before the upload.
-static func texture(id: StringName) -> Texture2D:
-	if _cache.has(id):
-		return _cache[id]
-	var path := String(FLOOR.get(id, STANDING.get(id, "")))
-	var tex: Texture2D = null
-	if path != "" and ResourceLoader.exists(path):
-		tex = load(path)
-	_cache[id] = tex
+static func current() -> TileTheme:
+	if theme == null:
+		theme = TileTheme.new()
+	return theme
+
+
+## Textures are pulled once and kept. Reaching for one inside _draw every
+## frame is both wasteful and unreliable — the first draw can land before
+## the upload.
+static func slot(name: StringName) -> Texture2D:
+	if _cache.has(name):
+		return _cache[name]
+	var tex := current().slot(name)
+	_cache[name] = tex
 	return tex
 
 
+## Call after changing the theme or dropping new files in.
+static func reload() -> void:
+	_cache.clear()
+
+
 static func warm() -> void:
-	for id in FLOOR:
-		texture(id)
-	for id in STANDING:
-		texture(id)
+	for name in TileTheme.slot_names():
+		slot(name)
 
 
-## What the ground under a cell is made of. Corruption is not a tint here —
-## the floor itself turns to flesh-set cobble, tile by tile, so a shop going
-## bad is something you watch spread rather than a number you read.
-static func floor_for(cell: int, level: int, corrupted: bool) -> StringName:
+static func has_any() -> bool:
+	for name in TileTheme.slot_names():
+		if slot(name) != null:
+			return true
+	return false
+
+
+# --- Floors ------------------------------------------------------------------
+
+static func floor_slot(cell: int, level: int, corrupted: bool) -> StringName:
 	if corrupted:
-		return &"flesh_cobble"
+		return &"floor_corruption"
 	match cell:
 		Shop.Cell.ALTAR:
-			return &"kintsugi"
+			return &"floor_altar"
 		Shop.Cell.BACKROOM:
-			return &"white_tile"
+			return &"floor_backroom"
 		Shop.Cell.DOOR:
-			return &"moss"
-	return &"planks" if level == 1 else &"grate"
+			return &"floor_outside"
+	return &"floor_shop" if level == 1 else &"floor_iron"
 
 
-## The face a wall shows. Level 1 is a log cabin; level 2 is riveted iron.
-static func wall_for(level: int, is_door_wall: bool) -> StringName:
-	if level == 1:
-		return &"log"
-	return &"wall_door" if is_door_wall else &"wall_rust"
+static func floor_texture(cell: int, level: int, corrupted: bool) -> Texture2D:
+	return slot(floor_slot(cell, level, corrupted))
+
+
+## What a floor looks like with no tile assigned. These are the colours the
+## game was built on before there was any art, and they are still what it
+## falls back to.
+static func floor_colour(cell: int, level: int, corrupted: bool) -> Color:
+	if corrupted:
+		return Palette.ROT.darkened(0.25)
+	match cell:
+		Shop.Cell.ALTAR:
+			return Palette.ALTAR_STAIN.darkened(0.45)
+		Shop.Cell.BACKROOM:
+			return Palette.STONE.darkened(0.45)
+		Shop.Cell.DOOR:
+			return Palette.DIRT
+	return Palette.FLOOR_WOOD if level == 1 else Palette.FLOOR_IRON
+
+
+static func outside_texture() -> Texture2D:
+	return slot(&"floor_outside")
+
+
+static func outside_colour() -> Color:
+	return Palette.GRASS.darkened(0.25)
+
+
+# --- Walls -------------------------------------------------------------------
+
+## `part` is one of north, side, sill — which face of the wall the camera is
+## looking at, decided by which side of the room the wall is on.
+static func wall_slot(level: int, part: StringName) -> StringName:
+	var stem := "wall_shop_" if level == 1 else "wall_iron_"
+	return StringName(stem + String(part))
+
+
+static func wall_texture(level: int, part: StringName) -> Texture2D:
+	return slot(wall_slot(level, part))
+
+
+static func wall_colour(level: int) -> Color:
+	return Palette.WALL_WOOD if level == 1 else Palette.IRON
+
+
+static func wall_top_colour(level: int) -> Color:
+	return Palette.WALL_WOOD_TOP if level == 1 else Palette.IRON_TOP
+
+
+## How many copies of the sprite make one cell of wall, across.
+static func wall_logs_across(level: int) -> int:
+	var t := current()
+	return maxi(1, t.shop_wall_logs if level == 1 else t.iron_wall_logs)

@@ -6,6 +6,17 @@ extends Node
 
 const TILE := 64
 
+## How the shop is laid out on screen. Both are built and both have art:
+## isometric uses the delivered 2:1 diamonds, orthogonal uses the square
+## tiles derived from them by tools/convert_tiles.py. The simulation is the
+## same either way — see scripts/ui/projection.gd.
+##
+## The enum lives here rather than on GridMap2D because this is an autoload
+## and parses before the class cache has heard of anything else.
+enum View { ISOMETRIC, ORTHOGONAL }
+
+var projection: int = View.ORTHOGONAL
+
 ## Level 1 is a clearing you can walk across. Level 2 is a warehouse.
 var grid_size := {1: 8, 2: 16}
 

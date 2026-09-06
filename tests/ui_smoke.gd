@@ -8,7 +8,23 @@ var _dispatched := 0
 var _placed := 0
 
 
+## Longest the whole run may take. A script error inside an async _ready
+## abandons the test without reporting anything, and the suite then waits for
+## a verdict that is never coming — which is indistinguishable from a slow
+## machine and wasted a lot of time once. This turns that into a failure.
+const DEADLINE := 180.0
+
+
 func _ready() -> void:
+	var watchdog := Timer.new()
+	watchdog.wait_time = DEADLINE
+	watchdog.one_shot = true
+	watchdog.timeout.connect(func() -> void:
+		_fail("the run did not finish within %d seconds" % int(DEADLINE))
+		_report())
+	add_child(watchdog)
+	watchdog.start()
+
 	_main = load("res://scenes/main.tscn").instantiate()
 	add_child(_main)
 	await get_tree().process_frame
@@ -20,15 +36,17 @@ func _ready() -> void:
 	var world: World = _main.world
 	_check(world != null, "the shop opens")
 
-	# Level 1: play thralls, stock what comes back, sell it.
-	for _round in 8:
+	# Level 1: play thralls, stock what comes back, sell it. Five rounds is
+	# enough to prove the loop and to afford the expansion; more only makes
+	# the suite slow to run, which is the same as not running it.
+	for _round in 5:
 		for button in _main._card_buttons:
 			if not button.disabled:
 				button.pressed.emit()
 				_dispatched += 1
 		await _run(31.0)
 		await _stock_via_ui(world)
-		await _run(20.0)
+		await _run(16.0)
 
 	_check(_dispatched > 0, "thrall cards can be played (%d)" % _dispatched)
 	_check(_placed > 0, "stock can be put on tables (%d)" % _placed)
@@ -70,7 +88,7 @@ func _ready() -> void:
 	_check(world.player_target != table, "tapping a table does not walk you into it")
 	_check(world.shop.walkable(world.player_target), "it walks you beside it")
 
-	# The isometric projection is the only way input reaches the sim, so a
+	# The projection is the only way input reaches the sim, so a
 	# tile that does not survive the round trip is a tile nobody can tap.
 	var view: WorldView = _main._view
 	var misses := 0
@@ -83,7 +101,7 @@ func _ready() -> void:
 
 	# And a tap between two tiles lands on one of them, not on nothing.
 	var centre := view.project_centre(Vector2(world.shop.size / 2, world.shop.size / 2))
-	var nudged := view.tile_at(centre + Vector2(view.tile_w() * 0.2, 0.0))
+	var nudged := view.tile_at(centre + Vector2(view.tile_size() * 0.2, 0.0))
 	_check(world.shop.in_bounds(nudged), "a tap just off centre still lands on the floor")
 
 	await _run(45.0)

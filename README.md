@@ -40,6 +40,9 @@ view does nothing but draw what it finds.
 | `scripts/sim/thralls.gd` | The deck, and what is out in the woods |
 | `scripts/sim/customers.gd` | Someone off the path |
 | `scripts/autoload/balance.gd` | Every tunable number |
-| `scripts/ui/world_view.gd` | The floor, drawn three-quarter top-down |
+| `scripts/ui/world_view.gd` | The shop, drawn |
+| `scripts/ui/grid_map.gd` | Where a tile lands on screen, either layout |
+| `scripts/ui/tile_theme.gd` | The tile slots. **The game ships with no art** |
+| `assets/tiles/README.md` | How to add your own tiles |
 | `scripts/ui/stock_panel.gd` | What you have and how long you have it for |
 | `docs/DESIGN.md` | Why the deck is a concurrency limit, and what rot is for |

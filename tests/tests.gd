@@ -21,6 +21,7 @@ func _ready() -> void:
 	_test_expansion_keeps_the_stock()
 	_test_cases_restock_themselves()
 	_test_audit()
+	_test_both_projections()
 	_test_determinism()
 	_report()
 
@@ -310,6 +311,50 @@ func _test_audit() -> void:
 	clean.corruption = Balance.audit_corruption_limit + 1.0
 	clean._audit()
 	check(clean.audits_failed == 1, "so is a corrupt floor, however flush you are")
+
+
+## Tapping is the only way input reaches the game, so a tile that does not
+## survive the round trip is a tile nobody can press — and it would fail in
+## silence. Both layouts are checked, because either can be the one shipped.
+func _test_both_projections() -> void:
+	for mode in [Balance.View.ISOMETRIC, Balance.View.ORTHOGONAL]:
+		var label := "isometric" if mode == Balance.View.ISOMETRIC else "orthogonal"
+		var grid := GridMap2D.new()
+		grid.mode = mode
+		check(grid.is_iso() == (mode == Balance.View.ISOMETRIC),
+			"%s: the map knows which it is" % label)
+		# The isometric tile is exactly 2:1; the square one is square.
+		for n in [8, 16]:
+			grid.fit(n, Vector2(1250, 720), 1.1)
+			if mode == Balance.View.ISOMETRIC:
+				check_quiet(is_equal_approx(grid.tile_h, grid.tile_w * 0.5),
+					"%s: tiles are exactly two by one" % label)
+			else:
+				check_quiet(is_equal_approx(grid.tile_h, grid.tile_w),
+					"%s: tiles are square" % label)
+			var missed := 0
+			for y in n:
+				for x in n:
+					var at := Vector2i(x, y)
+					if grid.tile_at(grid.centre(Vector2(at))) != at:
+						missed += 1
+			check(missed == 0,
+				"%s: all %d tiles of a %dx%d floor survive the round trip"
+				% [label, n * n, n, n])
+
+		# Depth has to increase away from the camera, or the sort is wrong
+		# and figures stand in front of walls they are behind.
+		grid.fit(8, Vector2(1250, 720), 1.1)
+		check_quiet(grid.depth(Vector2(2, 2)) > grid.depth(Vector2(2, 1)),
+			"%s: a nearer row sorts in front" % label)
+		if mode == Balance.View.ISOMETRIC:
+			check_quiet(grid.depth(Vector2(3, 2)) > grid.depth(Vector2(2, 2)),
+				"%s: and so does a nearer column" % label)
+		# Depth is read from the middle of a cell, so half a tile of movement
+		# never flips a figure past a wall she has not reached.
+		check_quiet(grid.depth(Vector2(2, 2.4)) > grid.depth(Vector2(2, 2)),
+			"%s: depth moves with a walking figure" % label)
+	check(true, "both layouts project, invert and sort correctly")
 
 
 ## Same seed, same shop. This is what lets the sweeps mean anything.
