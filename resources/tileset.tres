@@ -1,23 +1,38 @@
-[gd_resource type="TileSet" load_steps=3 format=3]
+[gd_resource type="TileSet" load_steps=6 format=3]
 
 [ext_resource type="Texture2D" path="res://assets/placeholder_tiles.png" id="1"]
+[ext_resource type="Texture2D" path="res://assets/wood tile.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/stone tile.png" id="3"]
 
 [sub_resource type="TileSetAtlasSource" id="atlas"]
 texture = ExtResource("1")
-texture_region_size = Vector2i(64, 64)
+texture_region_size = Vector2i(16, 16)
 0:0/0 = 0
 1:0/0 = 0
 2:0/0 = 0
-2:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-32, -32, 32, -32, 32, 32, -32, 32)
+2:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 3:0/0 = 0
 4:0/0 = 0
 4:0/size_in_atlas = Vector2i(1, 2)
-4:0/0/texture_origin = Vector2i(0, -32)
-4:0/0/y_sort_origin = 32
-4:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-32, -32, 32, -32, 32, 32, -32, 32)
+4:0/0/texture_origin = Vector2i(0, -8)
+4:0/0/y_sort_origin = 8
+4:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+
+[sub_resource type="TileSetAtlasSource" id="wood"]
+texture = ExtResource("2")
+texture_region_size = Vector2i(16, 16)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="stone"]
+texture = ExtResource("3")
+texture_region_size = Vector2i(16, 16)
+0:0/0 = 0
+0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 
 [resource]
 resource_name = "Wireframe Tiles"
-tile_size = Vector2i(64, 64)
+tile_size = Vector2i(16, 16)
 physics_layer_0/collision_layer = 1
 sources/0 = SubResource("atlas")
+sources/1 = SubResource("wood")
+sources/2 = SubResource("stone")

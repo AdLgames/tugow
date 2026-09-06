@@ -2,6 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://dt00wdcvpnu4t"
+path="res://.godot/imported/wood tile.png-5080d38d3e9cecfb1ef01ae14279fa0e.ctex"
 uid="uid://b7c73knhan3s3"
 path="res://.godot/imported/wood tile.png-25097e46420e5d3c6d1aec0c3c40c0bf.ctex"
 metadata={
@@ -10,6 +12,8 @@ metadata={
 
 [deps]
 
+source_file="res://assets/wood tile.png"
+dest_files=["res://.godot/imported/wood tile.png-5080d38d3e9cecfb1ef01ae14279fa0e.ctex"]
 source_file="res://assets/tiles/wood tile.png"
 dest_files=["res://.godot/imported/wood tile.png-25097e46420e5d3c6d1aec0c3c40c0bf.ctex"]
 

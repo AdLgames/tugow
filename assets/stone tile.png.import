@@ -2,6 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://c478gmkvbbrvw"
+path="res://.godot/imported/stone tile.png-068877414d822f15afb424a9be0ef468.ctex"
 uid="uid://havg3jqlnrxr"
 path="res://.godot/imported/stone tile.png-083a4fcbd8fa0720d8fd4ca90e98ccae.ctex"
 metadata={
@@ -10,6 +12,8 @@ metadata={
 
 [deps]
 
+source_file="res://assets/stone tile.png"
+dest_files=["res://.godot/imported/stone tile.png-068877414d822f15afb424a9be0ef468.ctex"]
 source_file="res://assets/tiles/stone tile.png"
 dest_files=["res://.godot/imported/stone tile.png-083a4fcbd8fa0720d8fd4ca90e98ccae.ctex"]
 

@@ -19,11 +19,11 @@ func _ready() -> void:
 	# Stand in the cell *above* a post — not inside it, which is solid and
 	# would simply shove the player back out. From there the player's body
 	# overlaps the post's upper half and should be hidden behind it.
-	world.player.global_position = Vector2(6 * World.CELL + 32, 5 * World.CELL + 60)
+	world.player.global_position = Vector2(6.5, 5.75) * float(World.CELL)
 	for _i in 4:
 		await get_tree().physics_frame
 	await _shot("02_behind_a_post")
-	world.player.global_position = Vector2(6 * World.CELL + 32, 7 * World.CELL + 4)
+	world.player.global_position = Vector2(6.5, 7.8) * float(World.CELL)
 	for _i in 4:
 		await get_tree().physics_frame
 	await _shot("03_in_front_of_a_post")
