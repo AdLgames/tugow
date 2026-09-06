@@ -22,4 +22,4 @@ tile_set = ExtResource("2")
 y_sort_enabled = true
 
 [node name="Player" parent="Props" instance=ExtResource("3")]
-position = Vector2(640, 448)
+position = Vector2(160, 112)

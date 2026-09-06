@@ -15,9 +15,17 @@ extends Node2D
 ## The starting room, painted in code so the project runs the moment you open
 ## it. Delete `_paint_starter_room()` once you are painting your own.
 const ROOM := Rect2i(0, 0, 20, 14)
-const CELL := 64
+## Pixel art is kept at its native size and the camera is zoomed instead, so
+## nothing is ever resampled. Matches tile_size in resources/tileset.tres.
+const CELL := 16
 
-## Atlas coordinates in resources/tileset.tres.
+## Sources in resources/tileset.tres. 0 is the placeholder sheet; 1 and 2 are
+## single-tile sources made from one image each, which is what you get when
+## you drag a 16x16 PNG in.
+const SOURCE_WOOD := 1
+const SOURCE_STONE := 2
+
+## Atlas coordinates in the placeholder sheet.
 const TILE_FLOOR := Vector2i(0, 0)
 const TILE_FLOOR_ALT := Vector2i(1, 0)
 const TILE_WALL := Vector2i(2, 0)
@@ -51,10 +59,11 @@ func _paint_starter_room() -> void:
 			var at := Vector2i(x, y)
 			var inside := ROOM.has_point(at)
 			if inside:
-				var alt := (x + y) % 2 == 0
-				ground.set_cell(at, SOURCE, TILE_FLOOR_ALT if alt else TILE_FLOOR)
+				# Your wood tile is source 1, one tile at 0:0.
+				ground.set_cell(at, SOURCE_WOOD, Vector2i.ZERO)
 			else:
-				walls.set_cell(at, SOURCE, TILE_WALL)
+				# And your stone is source 2, which carries the collision.
+				walls.set_cell(at, SOURCE_STONE, Vector2i.ZERO)
 	# A couple of posts inside the room. They are props rather than tiles, so
 	# the player passes behind them.
 	for x in [6, 13]:
@@ -72,7 +81,7 @@ func _place_player() -> void:
 
 ## Stand a prop on a cell. Its origin goes at the bottom of the cell, so it
 ## sorts by where it touches the floor.
-func add_prop(cell: Vector2i, height: float = 128.0) -> Prop:
+func add_prop(cell: Vector2i, height: float = 32.0) -> Prop:
 	var prop: Prop = PROP_SCENE.instantiate()
 	prop.height = height
 	prop.position = Vector2(cell.x * CELL + CELL * 0.5, cell.y * CELL + CELL)

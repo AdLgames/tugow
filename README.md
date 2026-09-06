@@ -24,6 +24,8 @@ and that world coordinates and grid cells agree both ways.
 
     xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots
 
+    godot --headless --path . res://tools/tileset_doctor.tscn
+
 ## What is here
 
 | | |
@@ -34,7 +36,9 @@ and that world coordinates and grid cells agree both ways.
 | `scripts/player.gd` | Eight-way movement |
 | `scenes/prop.tscn` | A tall thing the player can walk behind |
 | `resources/tileset.tres` | The TileSet. 64 × 64, one physics layer |
-| `assets/placeholder_tiles.png` | **Placeholder art. Replace it** |
+| `assets/wood tile.png` | Your floor |
+| `assets/stone tile.png` | Your wall — carries the collision |
+| `assets/placeholder_tiles.png` | Placeholder art, including the tall-tile example |
 
 ## The layers
 
@@ -58,13 +62,13 @@ in the tile inspector, and draw a rectangle on physics layer 0. A tile with no
 shape looks identical in the editor and is walked straight through; the smoke
 test checks for one on the wall tile for exactly that reason.
 
-**Tiles taller than one cell: two origins.** For a 64 x 128 tile in a 64 grid:
+**Tiles taller than one cell: two origins.** For a 16 x 32 tile in a 16 grid:
 
 | Property | Value | Why |
 |---|---|---|
 | Size in atlas | 1 x 2 | It spans two atlas cells |
-| **Texture Origin** | `(0, -32)` | Lifts it so its base sits on its cell instead of straddling it |
-| **Y Sort Origin** | `32` | Moves its sort point from the middle of the cell to the bottom |
+| **Texture Origin** | `(0, -8)` | Lifts it so its base sits on its cell instead of straddling it |
+| **Y Sort Origin** | `8` | Moves its sort point from the middle of the cell to the bottom |
 
 Both are in the tile inspector when a tile is selected in the TileSet panel.
 `4:0` in `resources/tileset.tres` is a worked example.
@@ -99,8 +103,20 @@ no error.
    inspector, and draw a rectangle on physics layer 0.
 5. Switch to the **TileMap** tab and paint.
 
-Changing tile size means changing it in three places: `tile_size` in the
-TileSet, `World.CELL`, and the region size on the atlas source.
+## Tile size
+
+**16 x 16.** Pixel art is kept at its native size and the camera is zoomed
+instead (`zoom = 4` on the Camera2D in `scenes/player.tscn`), so nothing is
+ever resampled and the pixels stay square.
+
+Your art must match. A texture smaller than one region makes a source with
+**zero tiles in it** — nothing appears in the palette and nothing can be
+painted, which is exactly what a 16 x 16 image does in a 64 x 64 tileset.
+`tools/tileset_doctor.gd` says so in as many words.
+
+Changing the size means changing it in three places: `tile_size` in the
+TileSet, the region size on each atlas source, and `World.CELL`. Everything
+else — the player, the props, the collision shapes — is expressed in cells.
 
 ## The starter room
 

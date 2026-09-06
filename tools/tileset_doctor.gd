@@ -57,6 +57,14 @@ func _report_atlas(id: int, atlas: TileSetAtlasSource, tile_set: TileSet) -> voi
 	if region != tile_set.tile_size:
 		print("      ^ region %s does not match the tileset's tile size %s"
 			% [region, tile_set.tile_size])
+	if size.x < region.x or size.y < region.y:
+		print("      ^ THE TEXTURE IS SMALLER THAN ONE REGION.")
+		print("        %dx%d cannot be cut into %dx%d tiles, so this source has"
+			% [int(size.x), int(size.y), region.x, region.y])
+		print("        nothing in it and nothing to paint. Either set the")
+		print("        tileset's tile size to %dx%d, or use bigger art."
+			% [int(size.x), int(size.y)])
+		return
 	var fits_x := int(size.x) % maxi(1, region.x) == 0
 	var fits_y := int(size.y) % maxi(1, region.y) == 0
 	if not fits_x or not fits_y:

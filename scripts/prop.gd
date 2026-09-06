@@ -11,8 +11,8 @@ extends StaticBody2D
 ## Its origin is at its base, which is what makes the sort read right: a
 ## character whose feet are lower down is nearer the camera.
 
-@export var height: float = 128.0
-@export var width: float = 64.0
+@export var height: float = 32.0
+@export var width: float = 16.0
 @export var tint: Color = Color("6e604e")
 
 
@@ -25,5 +25,5 @@ func _ready() -> void:
 func _draw() -> void:
 	var body := Rect2(-width * 0.5, -height, width, height)
 	draw_rect(body, tint)
-	draw_rect(Rect2(body.position, Vector2(width, 14)), tint.lightened(0.28))
-	draw_rect(body, tint.darkened(0.45), false, 2.0)
+	draw_rect(Rect2(body.position, Vector2(width, 4)), tint.lightened(0.28))
+	draw_rect(body, tint.darkened(0.45), false, 1.0)

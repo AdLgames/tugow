@@ -31,13 +31,11 @@ func _ready() -> void:
 	await get_tree().physics_frame
 
 	var prop_cell := Vector2i(6, 6)
-	# Standing in the cell above the prop: the player is farther from the
-	# camera and must be hidden behind it.
-	var behind := await _visible_player_pixels(
-		Vector2(prop_cell.x * World.CELL + 32, (prop_cell.y - 1) * World.CELL + 58))
-	# Standing below it: nearer the camera, and fully drawn.
-	var in_front := await _visible_player_pixels(
-		Vector2(prop_cell.x * World.CELL + 32, (prop_cell.y + 1) * World.CELL + 40))
+	# Positions are in cells, not pixels. An earlier version of this test hard
+	# coded pixel offsets and quietly stopped testing anything the moment the
+	# cell size changed.
+	var behind := await _visible_player_pixels(_at(prop_cell.x + 0.5, prop_cell.y - 0.25))
+	var in_front := await _visible_player_pixels(_at(prop_cell.x + 0.5, prop_cell.y + 1.8))
 
 	print("  player pixels — behind the prop: %d, in front of it: %d"
 		% [behind, in_front])
@@ -45,6 +43,11 @@ func _ready() -> void:
 	_check(behind < in_front * 0.5,
 		"and is hidden behind a prop they are standing above")
 	_report()
+
+
+## A point given in cells, so nothing here depends on the cell size.
+func _at(cx: float, cy: float) -> Vector2:
+	return Vector2(cx, cy) * float(World.CELL)
 
 
 ## How much of the player is on screen, counted in pixels of their own colour.
