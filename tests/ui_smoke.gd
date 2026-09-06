@@ -104,6 +104,32 @@ func _ready() -> void:
 	var nudged := view.tile_at(centre + Vector2(view.tile_size() * 0.2, 0.0))
 	_check(world.shop.in_bounds(nudged), "a tap just off centre still lands on the floor")
 
+	# The painted map: a TileMapLayer you fill in the editor. Nothing is
+	# painted in the repository, so this paints a couple of cells itself and
+	# checks the view notices — otherwise a broken alignment or draw order
+	# would only be found after someone had drawn a whole tileset.
+	var painted: PaintedMap = view.painted
+	_check(painted != null, "the view carries a painted map")
+	if painted != null:
+		_check(not painted.has_paint(), "which ships empty")
+		_check(view.map_offset().x >= 0 and view.map_offset().y >= 0,
+			"and puts the shop inside it")
+		var source := _throwaway_source(painted)
+		var cell := Vector2i(2, 2) + view.map_offset()
+		painted.ground().set_cell(cell, source, Vector2i.ZERO)
+		_check(painted.has_paint(), "painting a cell registers")
+		_check(view._painted_over(Vector2i(2, 2)),
+			"and the view knows that shop cell is painted over")
+		_check(not view._painted_over(Vector2i(3, 2)),
+			"and that its neighbour is not")
+		_check(painted.painted_rect().has_point(cell),
+			"the painted rectangle covers it")
+		# Outside the working area is not the game's business.
+		painted.ground().set_cell(Vector2i(PaintedMap.MAP_SIZE + 4, 0), source, Vector2i.ZERO)
+		_check(not painted.painted_rect().has_point(Vector2i(PaintedMap.MAP_SIZE + 4, 0)),
+			"and stops at the edge of the map")
+		painted.ground().clear()
+
 	await _run(45.0)
 	_check(world.tribute_owed >= 0, "tribute accrues without going negative")
 	print("UI smoke: %d dispatched, %d placed, %d sold, %d obols, level %d."
@@ -137,6 +163,17 @@ func _stock_via_ui(world: World) -> void:
 				return
 			_placed += 1
 	await get_tree().process_frame
+
+
+## A one-tile atlas made in memory, so the test needs no art on disk.
+func _throwaway_source(painted: PaintedMap) -> int:
+	var image := Image.create(PaintedMap.CELL, PaintedMap.CELL, false, Image.FORMAT_RGBA8)
+	image.fill(Color("4a6b3f"))
+	var source := TileSetAtlasSource.new()
+	source.texture = ImageTexture.create_from_image(image)
+	source.texture_region_size = Vector2i(PaintedMap.CELL, PaintedMap.CELL)
+	source.create_tile(Vector2i.ZERO)
+	return painted.ground().tile_set.add_source(source)
 
 
 func _press(prefix: String) -> bool:

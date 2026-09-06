@@ -18,6 +18,7 @@ signal tile_tapped(at: Vector2i)
 
 ## Every source tile is 64x64. Zoom is whole-numbered so the art never lands
 ## between screen pixels.
+const PAINTED_MAP_SCENE := "res://scenes/painted_map.tscn"
 const TABLE_LIFT := 0.30
 const WALL_TALL := 2.0
 ## Room left above the back row for anything tall standing on it.
@@ -26,15 +27,54 @@ const HEADROOM := 1.1
 var world: World = null
 var grid := GridMap2D.new()
 var glitches: Array = []
+## The hand-painted map, drawn behind everything this view draws itself.
+var painted: PaintedMap = null
 
 var _t: float = 0.0
 
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# The painted map is a child node, not something this view draws, so it
+	# is not bounded by the view unless the view is told to clip.
+	clip_contents = true
 	grid.mode = Balance.projection
 	Tiles.warm()
+	_add_painted_map()
 	set_process(true)
+
+
+## The painted map is a child that draws *behind* this view, so anything
+## painted sits under the shop's own furniture and people rather than over it.
+func _add_painted_map() -> void:
+	if not ResourceLoader.exists(PAINTED_MAP_SCENE):
+		return
+	var scene: PackedScene = load(PAINTED_MAP_SCENE)
+	painted = scene.instantiate() as PaintedMap
+	if painted == null:
+		return
+	painted.show_behind_parent = true
+	painted.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(painted)
+
+
+## Where the shop's cell (0, 0) sits on the painted map, so the shop stands in
+## the middle of it however big the shop has grown.
+func map_offset() -> Vector2i:
+	var n := world.shop.size if world != null else 0
+	var half := (PaintedMap.MAP_SIZE - n) / 2
+	return Vector2i(half, half)
+
+
+## Has anything been painted over this shop cell?
+func _painted_over(at: Vector2i) -> bool:
+	if painted == null:
+		return false
+	var cell := at + map_offset()
+	for layer in painted.layers():
+		if layer.get_cell_source_id(cell) != -1:
+			return true
+	return false
 
 
 func bind(p_world: World) -> void:
@@ -63,6 +103,17 @@ func _layout() -> void:
 		return
 	grid.mode = Balance.projection
 	grid.fit(world.shop.size, size, HEADROOM)
+	_place_painted_map()
+
+
+## One painted cell is one shop cell, wherever the grid has landed.
+func _place_painted_map() -> void:
+	if painted == null:
+		return
+	var factor := grid.tile_w / float(PaintedMap.CELL)
+	painted.scale = Vector2(factor, factor)
+	painted.position = project(Vector2(-map_offset()))
+	painted.visible = painted.has_paint()
 
 
 func tile_size() -> float:
@@ -105,7 +156,10 @@ func _draw() -> void:
 	if world == null:
 		return
 	_layout()
-	draw_rect(Rect2(Vector2.ZERO, size), Palette.NIGHT, true)
+	# The backdrop would cover the painted map, which draws behind this view.
+	# With something painted, the map is the backdrop.
+	if painted == null or not painted.has_paint():
+		draw_rect(Rect2(Vector2.ZERO, size), Palette.NIGHT, true)
 	_draw_outside()
 	_draw_floor()
 	_draw_standing()
@@ -118,6 +172,8 @@ func _draw_outside() -> void:
 	for y in range(-2, n + 2):
 		for x in range(-2, n + 2):
 			if x >= 0 and y >= 0 and x < n and y < n:
+				continue
+			if _painted_over(Vector2i(x, y)):
 				continue
 			_blit(tex, Tiles.outside_colour(), Vector2i(x, y), 0.6)
 
@@ -136,6 +192,10 @@ func _draw_floor() -> void:
 			# cell has a fixed place in the queue, so the spread reads as a
 			# spread and always creeps the same way.
 			var corrupted := _corruption_rank(at) < corrupt_share
+			# Corruption still shows through: a floor turning is the game
+			# telling you something, and painting over it would hide it.
+			if _painted_over(at) and not corrupted:
+				continue
 			_blit(Tiles.floor_texture(cell, world.level, corrupted),
 				Tiles.floor_colour(cell, world.level, corrupted), at)
 
