@@ -23,6 +23,14 @@ func _ready() -> void:
 	_press("Open")
 	for _i in 4:
 		await get_tree().process_frame
+	# Force the painted face for the shot, so the art path is always in the
+	# set rather than left to the roll.
+	var g: Game = _main.game
+	if g.current != null and Portraits.painted() > 0:
+		g.current.portrait = 0
+		_main._portrait.show_traveller(g.current)
+		for _i in 3:
+			await get_tree().process_frame
 	await _shot("03_first_traveller")
 
 	# Ask two, so the transcript has something in it.

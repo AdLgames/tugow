@@ -136,11 +136,25 @@ func _make_traveller(s: Shifts.Shift, is_thing: bool) -> Traveller:
 	var t := Traveller.new()
 	t.given_name = Names.pick(rng)
 	t.reason = Names.reason(rng)
-	t.portrait = rng.randi_range(0, Dread.PORTRAITS - 1)
+	t.portrait = _pick_portrait()
 	t.is_thing = is_thing
 	if is_thing:
 		t.tells = Tells.roll(rng, rng.randi_range(s.tells_min, s.tells_max))
 	return t
+
+
+## Painted faces are worth showing, so they come up more often than one in
+## twenty would give — but not so often that a shift is the same person over
+## and over. Everything else falls back to a face drawn from its own seed.
+func _pick_portrait() -> int:
+	var painted := Portraits.painted()
+	if painted > 0 and rng.randf() < 0.34:
+		var order: Array = []
+		for index in Portraits.TABLE:
+			if Portraits.has_art(index):
+				order.append(index)
+		return int(order[rng.randi_range(0, order.size() - 1)])
+	return rng.randi_range(0, Dread.PORTRAITS - 1)
 
 
 ## The last figure has your face and asks your questions. It is the only

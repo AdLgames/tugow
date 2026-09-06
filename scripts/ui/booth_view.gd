@@ -1,26 +1,41 @@
 class_name BoothView
 extends Control
-## The room, drawn. One desk, one lamp, one window onto the safe zone, and a
-## photograph the player will stop looking at after shift two.
+## The room. The painting does the work — the desk, the hatch, the lamp and
+## its light are all in the art — so everything drawn here is either a thing
+## that changes (the safe-zone lights, the family photo) or a thing that has
+## to respond to the player (the dark closing in as dread rises).
 ##
-## Everything here is drawn rather than textured, so the whole game runs with
-## no art at all — art can be dropped over the top later without the layout
-## moving. See docs/ASSETS.md.
+## Art: assets/scene/booth.png, 1344x768 pixel art, drawn nearest-neighbour so
+## it stays crisp at 1920x1080.
+
+## Where things sit in the painting, as fractions of the frame, so the layout
+## survives a re-scale or a repaint at another size.
+const HATCH := Rect2(0.348, 0.219, 0.322, 0.419)     ## The open pane they stand in.
+const SAFE_ZONE := Rect2(0.358, 0.045, 0.305, 0.135)  ## Upper pane: the safe zone, a long way off.
+const SIDE_PANE := Rect2(0.043, 0.030, 0.285, 0.620)  ## Side window: dark glass, where the talking goes.
+const DESK_TOP := 0.667
+const DESK_FRONT := 0.859
+const LAMP := Vector2(0.830, 0.545)                  ## The bulb in the painting.
 
 var lights: int = Dread.WINDOW_LIGHTS
 var shift: int = 1
-## Rises with dread. Only ever expressed as how far the lamp reaches.
+## Rises with dread. The lamp is the only light in the room, so this is the
+## dark outside its reach closing in.
 var closeness: float = 0.0
-## Set for a beat when the desk glass is behaving badly.
+## Set for a beat when the desk glass is misbehaving.
 var glass_lag: float = 0.0
 
+var _art: Texture2D
 var _t: float = 0.0
 
 
 func _ready() -> void:
-	# The room is drawn from `size`, so it is pinned to the viewport rather
-	# than left to an anchor pass that has not run by the first frame.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Pixel art, scaled up. Anything but nearest turns it to mush.
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_art = load("res://assets/scene/booth.png") if ResourceLoader.exists("res://assets/scene/booth.png") else null
+	Props.warm()
+	Portraits.warm()
 	_fit()
 	get_viewport().size_changed.connect(_fit)
 	set_process(true)
@@ -37,105 +52,118 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Where the traveller stands, in screen coordinates. The interface asks the
+## painting where things are rather than repeating the numbers.
+func hatch_rect() -> Rect2:
+	return Rect2(HATCH.position * size, HATCH.size * size)
+
+
+## The dark glass of the side window: where everything said is written.
+func side_pane_rect() -> Rect2:
+	return Rect2(SIDE_PANE.position * size, SIDE_PANE.size * size)
+
+
 func _draw() -> void:
-	var w := size.x
-	var h := size.y
-	draw_rect(Rect2(0, 0, w, h), Palette.NIGHT, true)
-	_draw_lamp_pool(w, h)
-	_draw_back_wall(w, h)
-	_draw_window(w, h)
-	_draw_desk(w, h)
-	_draw_photo(w, h)
-	_draw_vignette(w, h)
+	if _art == null:
+		draw_rect(Rect2(Vector2.ZERO, size), Palette.NIGHT, true)
+	else:
+		draw_texture_rect(_art, Rect2(Vector2.ZERO, size), false)
+	_draw_safe_zone(size)
+	_draw_props(size)
+	_draw_photo_faces(size)
+	_draw_glass(size)
+	_draw_dark(size)
 
 
-## The lamp is the whole lighting model, and it is small. Everything outside
-## it is black — which is the point of a booth at night. As dread rises the
-## pool draws in, until on the sixth shift it barely clears the desk.
-func _draw_lamp_pool(w: float, h: float) -> void:
-	var centre := Vector2(w * 0.32, h * 0.50)
-	var reach := lerpf(w * 0.34, w * 0.19, clampf(closeness, 0.0, 1.0))
-	var steps := 30
-	for i in steps:
-		var f := float(i) / float(steps)
-		# Falls off fast: a bright core and very little spill.
-		var radius := reach * (1.0 - f)
-		var alpha := 0.020 * pow(1.0 - f, 0.6)
-		draw_circle(centre, radius, Color(Palette.LAMP.r, Palette.LAMP.g, Palette.LAMP.b, alpha))
-
-
-## Barely there. The player should be looking at a face, not at planks.
-func _draw_back_wall(w: float, h: float) -> void:
-	draw_rect(Rect2(0, 0, w, h * 0.62), Color(Palette.BOOTH, 0.55), true)
-	for i in 24:
-		var x := w * float(i) / 24.0
-		draw_line(Vector2(x, 0), Vector2(x, h * 0.62), Color(0, 0, 0, 0.22), 2.0)
-
-
-## The safe zone, far off over their shoulder. One light goes out per thing
-## you wave through, and it is the only score the game ever shows.
-func _draw_window(w: float, h: float) -> void:
-	var frame := Rect2(w * 0.78, h * 0.11, w * 0.145, h * 0.115)
-	draw_rect(frame.grow(4.0), Color("0b0b0e"), true)
-	draw_rect(frame, Palette.WINDOW_DARK, true)
+## The safe zone, seen through the side window. Eight lit windows, one of
+## which goes out for every thing you wave through. It is the only readout in
+## the game and it is deliberately across the room from everything else.
+func _draw_safe_zone(s: Vector2) -> void:
+	var pane := Rect2(SAFE_ZONE.position * s, SAFE_ZONE.size * s)
 	var cols := 4
 	var rows := 2
-	var pad := 5.0
+	var pad := pane.size.x * 0.045
 	var cell := Vector2(
-		(frame.size.x - pad * float(cols + 1)) / float(cols),
-		(frame.size.y - pad * float(rows + 1)) / float(rows))
+		(pane.size.x - pad * float(cols + 1)) / float(cols),
+		(pane.size.y - pad * float(rows + 1)) / float(rows))
+	# A block of flats a long way off, most of the frame given to the dark
+	# between the windows.
 	for i in Dread.WINDOW_LIGHTS:
-		var at := frame.position + Vector2(
+		var at := pane.position + Vector2(
 			pad + float(i % cols) * (cell.x + pad),
 			pad + float(i / cols) * (cell.y + pad))
-		var box := Rect2(at, cell)
+		var box := Rect2(at, cell * Vector2(0.58, 0.52))
 		if i >= lights:
-			draw_rect(box, Color("0e0f12"), true)
+			draw_rect(box, Color("07080b", 0.85), true)
 			continue
-		# A lamp behind a curtain, a long way off, is never quite steady.
-		var flicker := 0.62 + 0.16 * sin(_t * (1.7 + float(i) * 0.31) + float(i))
+		var flicker := 0.50 + 0.13 * sin(_t * (1.6 + float(i) * 0.29) + float(i) * 1.7)
+		draw_rect(box.grow(4.0), Color(Palette.WINDOW_LIT, 0.05), true)
 		draw_rect(box, Color(Palette.WINDOW_LIT, flicker), true)
-		draw_rect(box.grow(3.0), Color(Palette.WINDOW_LIT, 0.05), true)
 
 
-func _draw_desk(w: float, h: float) -> void:
-	var top := h * 0.62
-	draw_rect(Rect2(0, top, w, h - top), Palette.DESK.darkened(0.45), true)
-	draw_rect(Rect2(0, top, w, 3), Color(Palette.LAMP_DIM, 0.35), true)
-	# The glass they lean on, and that you can see yourself in.
-	var glass := Rect2(w * 0.05, top + 18.0, w * 0.30, h * 0.055)
-	draw_rect(glass, Color(Palette.GLASS, 0.30), true)
-	draw_rect(glass, Color(0, 0, 0, 0.45), false, 2.0)
-	# Your reflection. When the glass misbehaves it is a beat behind you.
-	var drift := 0.0 if glass_lag <= 0.0 else sin(_t * 3.4) * 10.0
-	draw_rect(Rect2(glass.position + Vector2(26.0 + drift, 12.0),
-		Vector2(70, glass.size.y - 24.0)), Color(Palette.INK, 0.045), true)
-
-
-## Eight variants, one face changing per shift. Nobody notices on shift two.
-func _draw_photo(w: float, h: float) -> void:
-	var at := Rect2(w * 0.80, h * 0.40, 116, 86)
-	draw_rect(at.grow(4.0), Color("3a3128"), true)
-	draw_rect(at, Color("1a1713"), true)
-	var faces := 3
-	for i in faces:
-		var cx := at.position.x + at.size.x * (float(i) + 0.5) / float(faces)
-		var cy := at.position.y + at.size.y * 0.44
-		# One of them stops being a face, a different one each shift.
-		var changed := i == (shift - 1) % faces and shift > 1
-		draw_circle(Vector2(cx, cy), 11.0,
-			Color(Palette.INK_DIM if not changed else Color("0f1013"), 0.62))
-		if changed:
+## The dressing: clipboard, radio, mug, photograph, lamp. Painted props, laid
+## out from a table of fractions so nothing here is hard-coded to 1920x1080.
+func _draw_props(s: Vector2) -> void:
+	for id in Props.ids():
+		var tex := Props.texture(id)
+		if tex == null:
 			continue
-		draw_circle(Vector2(cx - 3.5, cy - 2.5), 1.6, Palette.NIGHT)
-		draw_circle(Vector2(cx + 3.5, cy - 2.5), 1.6, Palette.NIGHT)
+		var at := Props.rect_for(id, s, tex)
+		var tilt := Props.tilt_of(id)
+		if is_zero_approx(tilt):
+			draw_texture_rect(tex, at, false)
+			continue
+		# Nothing on a desk is ever quite square to it.
+		draw_set_transform(at.get_center(), tilt, Vector2.ONE)
+		draw_texture_rect(tex, Rect2(-at.size * 0.5, at.size), false)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-## Heavy. The room should close on the player as much as the lamp allows.
-func _draw_vignette(w: float, h: float) -> void:
-	var bands := 26
+## The photograph is real art, and one of its three faces stops being a face
+## on every shift after the first. Rather than eight painted variants, the
+## face is put out — which is closer to what it should feel like anyway.
+func _draw_photo_faces(s: Vector2) -> void:
+	if shift <= 1:
+		return
+	var tex := Props.texture(&"photo_family")
+	if tex == null:
+		return
+	var at := Props.rect_for(&"photo_family", s, tex)
+	# The three heads, as fractions of the framed photograph.
+	var heads := [Vector2(0.34, 0.42), Vector2(0.56, 0.33), Vector2(0.62, 0.52)]
+	var which: int = (shift - 2) % heads.size()
+	var head: Vector2 = heads[which]
+	var centre := at.position + head * at.size
+	draw_set_transform(at.get_center(), Props.tilt_of(&"photo_family"), Vector2.ONE)
+	var local := centre - at.get_center()
+	draw_circle(local, at.size.x * 0.115, Color("0a0a0d", 0.93))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## Your own reflection in the desk glass. Ordinarily a smear you never notice;
+## for a few seconds after the reflection scare, a beat behind you.
+func _draw_glass(s: Vector2) -> void:
+	if glass_lag <= 0.0:
+		return
+	var drift := sin(_t * 3.4) * s.x * 0.006
+	var box := Rect2(s.x * 0.42 + drift, s.y * DESK_TOP + s.y * 0.012,
+		s.x * 0.075, s.y * 0.055)
+	draw_rect(box, Color(Palette.INK, 0.055), true)
+
+
+## The lamp is the only light in the room. As dread rises the dark outside it
+## closes in — this is the only place dread is ever expressed, and it is never
+## named or numbered.
+func _draw_dark(s: Vector2) -> void:
+	var centre := LAMP * s
+	var reach := lerpf(s.x * 1.05, s.x * 0.44, clampf(closeness, 0.0, 1.0))
+	var bands := 22
 	for i in bands:
 		var f := float(i) / float(bands)
-		var inset := f * f * 520.0
-		draw_rect(Rect2(inset, inset, w - inset * 2.0, h - inset * 2.0),
-			Color(0, 0, 0, 0.055), false, 26.0)
+		# Rings of shadow, tight to the frame and opening out toward the lamp.
+		var radius := reach + f * f * s.x * 0.55
+		draw_arc(centre, radius, 0.0, TAU, 96,
+			Color(0, 0, 0, 0.055 + 0.03 * closeness), s.x * 0.035)
+	# A flat sit-down on everything, so a frightened booth is simply darker.
+	if closeness > 0.0:
+		draw_rect(Rect2(Vector2.ZERO, s), Color(0, 0, 0, 0.30 * closeness), true)

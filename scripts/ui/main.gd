@@ -43,26 +43,36 @@ func _build() -> void:
 	add_child(_booth)
 
 	_portrait = PortraitView.new()
-	_portrait.position = Vector2(150, 120)
-	_portrait.size = PortraitView.SIZE
+	# The hatch in the painting is where a traveller stands, so the portrait
+	# asks the room for it rather than repeating the number.
+	var hatch := _booth.hatch_rect()
+	_portrait.position = hatch.position
+	_portrait.size = hatch.size
 	add_child(_portrait)
 
 	_shift_label = _label("", 18, Palette.INK_DIM)
 	_shift_label.position = Vector2(60, 44)
 	_shift_label.size = Vector2(600, 26)
 
-	_name_label = _label("", 34, Palette.INK)
-	_name_label.position = Vector2(720, 150)
-	_name_label.size = Vector2(560, 44)
+	# The traveller's file is written on the clipboard on the desk, tilted
+	# with it, because a name tag is a thing you pick up rather than a
+	# caption floating over their head.
+	_name_label = _label("", 27, Color("2f2a24"))
+	_name_label.position = Vector2(126, 752)
+	_name_label.size = Vector2(240, 38)
+	_name_label.rotation = Props.tilt_of(&"clipboard")
 
-	_reason_label = _label("", 18, Palette.INK_DIM)
-	_reason_label.position = Vector2(720, 200)
-	_reason_label.size = Vector2(560, 70)
+	_reason_label = _label("", 16, Color("4a4038"))
+	_reason_label.position = Vector2(126, 800)
+	_reason_label.size = Vector2(232, 150)
 	_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_reason_label.rotation = Props.tilt_of(&"clipboard")
 
+	# Everything said, over the dark glass of the side window.
 	_transcript = RichTextLabel.new()
-	_transcript.position = Vector2(720, 280)
-	_transcript.size = Vector2(1000, 330)
+	var pane := _booth.side_pane_rect()
+	_transcript.position = pane.position + Vector2(18, 90)
+	_transcript.size = pane.size - Vector2(36, 130)
 	_transcript.bbcode_enabled = true
 	_transcript.scroll_following = true
 	_transcript.add_theme_color_override("default_color", Palette.INK_DIM)
@@ -70,7 +80,7 @@ func _build() -> void:
 	add_child(_transcript)
 
 	_asks_label = _label("", 18, Palette.LAMP_DIM)
-	_asks_label.position = Vector2(1320, 656)
+	_asks_label.position = Vector2(1354, 112)
 	_asks_label.size = Vector2(520, 26)
 
 	_build_questions()
@@ -95,8 +105,8 @@ func _build_questions() -> void:
 	for i in ids.size():
 		var button := Button.new()
 		button.text = Questions.ask_text(ids[i])
-		button.position = Vector2(60 + float(i % 2) * 620.0, 700.0 + float(i / 2) * 58.0)
-		button.size = Vector2(590, 48)
+		button.position = Vector2(1352, 148.0 + float(i) * 58.0)
+		button.size = Vector2(536, 50)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.add_theme_font_size_override("font_size", 19)
 		_style(button, Palette.DESK, Palette.INK)
@@ -108,8 +118,8 @@ func _build_questions() -> void:
 func _build_decisions() -> void:
 	_deny = Button.new()
 	_deny.text = "DENY"
-	_deny.position = Vector2(1320, 700)
-	_deny.size = Vector2(250, 106)
+	_deny.position = Vector2(1352, 682)
+	_deny.size = Vector2(258, 96)
 	_deny.add_theme_font_size_override("font_size", 30)
 	_style(_deny, Palette.DENY.darkened(0.55), Palette.INK)
 	_deny.pressed.connect(_on_decide.bind(false))
@@ -117,8 +127,8 @@ func _build_decisions() -> void:
 
 	_approve = Button.new()
 	_approve.text = "APPROVE"
-	_approve.position = Vector2(1590, 700)
-	_approve.size = Vector2(250, 106)
+	_approve.position = Vector2(1630, 682)
+	_approve.size = Vector2(258, 96)
 	_approve.add_theme_font_size_override("font_size", 30)
 	_style(_approve, Palette.APPROVE.darkened(0.55), Palette.INK)
 	_approve.pressed.connect(_on_decide.bind(true))

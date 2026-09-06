@@ -3,35 +3,55 @@
 Everything in the game is currently **drawn in code**, so it runs and is
 testable with no art at all. Art drops over the top without the layout moving.
 
-## What exists as code today
+## What is painted
 
-| Thing | Where | Notes |
+| Asset | File | Notes |
 |---|---|---|
-| Booth, desk, lamp, vignette | `scripts/ui/booth_view.gd` | The lamp is the whole lighting model |
-| Safe-zone window, 8 lights | `scripts/ui/booth_view.gd` | Flickers per-light, on independent cycles |
-| Family photo, 3 faces | `scripts/ui/booth_view.gd` | One face stops being a face per shift |
-| 20 traveller portraits | `scripts/ui/portrait_view.gd` | Generated from the portrait seed, so the same traveller always has the same face |
-| The idle blink | `scripts/ui/portrait_view.gd` | A mechanic, not decoration — see below |
-| Faceless traveller | `scripts/ui/portrait_view.gd` | Shift five |
+| Booth background | `assets/scene/booth.png` | 1344x768, drawn nearest-neighbour to 1920x1080 |
+| Clipboard | `assets/props/clipboard.png` | Holds the traveller's file — name and reason |
+| Radio | `assets/props/radio.png` | The object `Scares.Id.RADIO` speaks out of |
+| Mug, desk lamp | `assets/props/` | Dressing |
+| Family photograph | `assets/props/photo_family.png` | One of its three faces is put out per shift |
+| Traveller 00 | `assets/portraits/00.png` | 1 of 20 |
 
-## What a painter would replace
+Prop positions live in `scripts/ui/props.gd` as fractions of the frame, and
+the room asks the painting where the hatch and the side pane are rather than
+repeating the numbers — so a repaint at another size does not move the
+interface.
 
-| Asset | Size | Count | Note |
-|---|---|---|---|
-| Booth background | 1920x1080 | 1 | Desk, back wall, the door behind you |
-| Safe-zone window overlay | ~280x125 | 3 states | Fully lit, half, dark |
-| Traveller portraits | 520x560 | 20 | **Each needs a 2-frame idle blink** |
-| Faceless traveller | 520x560 | 1 | |
-| Scare stills | 1920x1080 | 6 | One per entry in `Scares.Id` |
-| Family photo | 116x86 | 8 | One variant per shift |
+## What is still drawn in code
+
+| Thing | Where | Replaced by |
+|---|---|---|
+| Travellers 01-19 | `scripts/ui/portrait_view.gd` | Painted portraits |
+| The faceless one | `scripts/ui/portrait_view.gd` | A painted figure |
+| Safe-zone lights | `scripts/ui/booth_view.gd` | Could stay code — it has to animate |
+| The dark closing in | `scripts/ui/booth_view.gd` | Stays code — it tracks dread |
+
+A generated face is drawn from its portrait seed, so the same traveller always
+has the same face, and the game is playable and testable before any of the
+twenty are painted.
+
+## Still needed
+
+| Asset | Size | Count |
+|---|---|---|
+| Traveller portraits | ~768x720 | 19 more |
+| Scare stills | 1920x1080 | 6 |
+| Faceless traveller | ~768x720 | 1 |
 
 ### The blink is load-bearing
 
 People blink and shift their weight. A thing that has not learned to yet does
-not. This is one of the seven tells and it is the one players find first, so
-every human portrait needs a genuine two-frame idle and things need a
-perfectly still one. From shift five it stops meaning anything — things learn
-it, and the people out there are too tired — and the art has to support both.
+not. This is one of the seven tells and the one players find first.
+
+**A painted portrait is not finished until it says where its eyes are.** The
+blink is a lid drawn over a band named in `scripts/ui/portraits.gd`, so every
+new face needs a row in that table giving its eye band as a fraction of the
+image. Without one it falls back to a drawn face, which blinks on its own.
+
+From shift five the blink stops meaning anything — things learn it, and the
+people out there are too tired to do it — so the art has to read both ways.
 
 ## Audio — spend the money here
 
