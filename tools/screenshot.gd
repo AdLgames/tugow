@@ -43,6 +43,9 @@ func _ready() -> void:
 	# there the player's body overlaps the prop and should be hidden by it.
 	var stand := world.cell_at(world.player.global_position)
 	world.add_prop(stand + Vector2i.DOWN * 2, 32.0)
+	# A counter to its left, so one shot shows both a placeholder prop and a
+	# real one built from art.
+	world.add_counter(stand + Vector2i(-4, -2), 4)
 	world.player.global_position = world.centre_of(stand + Vector2i.DOWN)
 	for _i in 12:
 		await get_tree().physics_frame

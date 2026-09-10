@@ -47,6 +47,7 @@ darkens the floor in front of it while open floor stays lit.
 | `scripts/player.gd` | Eight-way movement |
 | `resources/tileset.tres` | The TileSet. 16 × 16, one physics layer, one occlusion layer |
 | `tools/apply_tile_roles.gd` | Makes wall tiles solid and shadow-casting |
+| `tools/prune_missing.gd` | Repairs a tileset whose art has gone missing |
 | `assets/big plank *.png` | Floor |
 | `assets/*wall*.png`, `vertical.png` | Walls |
 
@@ -158,6 +159,45 @@ wall of darkness.
 Use tile layers for floors and for walls. Use props for posts, counters,
 shelves — anything standing in the middle of the floor.
 
+## Props
+
+`scenes/prop.tscn` is the one prop. Give it a `texture` and the art is placed
+standing on its origin; leave it empty and you get a placeholder box the same
+size, which is enough to block a room out before the art exists.
+
+It measures the **opaque part** of the art, not the canvas it was drawn on.
+Twenty pixels of counter on a 32-pixel image is a twenty-pixel prop, so it
+does not collide with six pixels of nothing either side.
+
+| Property | |
+|---|---|
+| `texture` | The art. Sets `width` and `height` from it. |
+| `footprint` | How deep it is **on the floor**. Defaults to 7 px. |
+| `tint` | The placeholder box only. |
+
+**`footprint` is the one to get right.** The default suits anything you see
+the side of — a shelf, a crate, a lamp post — which stands on a shallow strip
+of floor and lets a lamp behind it throw a shadow past rather than a wall of
+darkness. Something seen from above, whose whole shape *is* on the floor,
+wants `footprint = height` or the player walks through most of it.
+
+### Counters
+
+`scenes/props/counter.tscn` lays out a run of pieces. It is many props rather
+than one wide sprite so the player sorts against the piece they are standing
+behind, not against the whole run.
+
+| Property | |
+|---|---|
+| `length` | Pieces, ends included |
+| `axis` | `DOWN` or `ACROSS`. Match the art: a piece capped top and bottom is a `DOWN` run. |
+| `start_texture`, `middle_texture`, `end_texture` | Capped, repeating, capped |
+| `flat_on_the_floor` | On for a counter or table, off for a run of shelving |
+
+Pieces are spaced by the size of the art, so they butt up whatever size they
+are drawn. `World.add_counter(cell, length)` places one from code, and
+`World.add_table(cell)` places a table.
+
 ## Tiles taller than one cell
 
 | Property | Value | Why |
@@ -167,6 +207,31 @@ shelves — anything standing in the middle of the floor.
 | **Y Sort Origin** | `8` | Moves its sort point from the middle of the cell to the bottom |
 
 Both are in the tile inspector when a tile is selected in the TileSet panel.
+
+## When the whole project breaks at once
+
+Deleting or renaming a PNG from outside the FileSystem dock leaves the
+TileSet pointing at a path that is not there. Godot then refuses to load the
+whole resource, every layer that uses it loses its tiles, and one missing
+file reads as eight errors about scenes that are perfectly fine. The error
+naming a `.png` is the real one; the ones naming `tileset.tres` and
+`world.tscn` are consequences.
+
+Quickest fix: put a file back at that exact path — duplicating a similar one
+and renaming it will do — then remove the source properly from the TileSet
+tab.
+
+Otherwise:
+
+    godot --headless --path . --script res://tools/prune_missing.gd
+    godot --headless --path . --script res://tools/prune_missing.gd -- --apply
+
+It reads the tileset as text rather than loading it, since a tileset in that
+state cannot be loaded, and drops the dead source along with the sub-resource
+and `sources/` line that go with it. Without `--apply` it only reports.
+
+**Rename art from inside the FileSystem dock** and none of this happens —
+Godot rewrites the references for you.
 
 ## Putting your own tiles in
 

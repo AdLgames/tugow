@@ -66,12 +66,12 @@ func _draw() -> void:
 	# Props stand in the same daylight. Their shadow comes off the footprint
 	# rather than the whole height, for the same reason the lamps' does: a
 	# shelf should darken the floor beside it, not paint a wall of black.
-	for child in _world.props.get_children():
-		var prop := child as Prop
-		if prop == null:
-			continue
-		var base := Vector2(prop.width, Prop.FOOTPRINT)
-		var at := prop.position - Vector2(base.x * 0.5, base.y) + shift
+	# Found by walking rather than by listing the direct children, because a
+	# Counter holds its pieces itself — a run of counter would otherwise be
+	# the one thing in the room casting no shadow.
+	for prop in _props_under(_world.props):
+		var base := Vector2(prop.width, prop.footprint)
+		var at := prop.global_position - Vector2(base.x * 0.5, base.y) + shift
 		draw_rect(Rect2(at, base), color)
 
 
@@ -96,4 +96,14 @@ func shadow_cells() -> Array[Vector2i]:
 				if neighbour != Vector2i.ZERO and _world.is_floor(at + neighbour):
 					out.append(at)
 					break
+	return out
+
+
+func _props_under(node: Node) -> Array[Prop]:
+	var out: Array[Prop] = []
+	for child in node.get_children():
+		var prop := child as Prop
+		if prop != null:
+			out.append(prop)
+		out.append_array(_props_under(child))
 	return out
