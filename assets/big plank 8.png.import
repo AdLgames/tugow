@@ -2,20 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dt00wdcvpnu4t"
-path="res://.godot/imported/wood tile.png-5080d38d3e9cecfb1ef01ae14279fa0e.ctex"
-uid="uid://b7c73knhan3s3"
-path="res://.godot/imported/wood tile.png-25097e46420e5d3c6d1aec0c3c40c0bf.ctex"
+uid="uid://bkvq3tek7fc5y"
+path="res://.godot/imported/big plank 8.png-28ea5fc9d43db42675bc60721ab2dfe8.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/wood tile.png"
-dest_files=["res://.godot/imported/wood tile.png-5080d38d3e9cecfb1ef01ae14279fa0e.ctex"]
-source_file="res://assets/tiles/wood tile.png"
-dest_files=["res://.godot/imported/wood tile.png-25097e46420e5d3c6d1aec0c3c40c0bf.ctex"]
+source_file="res://assets/big plank 8.png"
+dest_files=["res://.godot/imported/big plank 8.png-28ea5fc9d43db42675bc60721ab2dfe8.ctex"]
 
 [params]
 

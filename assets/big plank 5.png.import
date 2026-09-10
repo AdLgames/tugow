@@ -2,20 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c478gmkvbbrvw"
-path="res://.godot/imported/stone tile.png-068877414d822f15afb424a9be0ef468.ctex"
-uid="uid://havg3jqlnrxr"
-path="res://.godot/imported/stone tile.png-083a4fcbd8fa0720d8fd4ca90e98ccae.ctex"
+uid="uid://b341kv3kxlrsl"
+path="res://.godot/imported/big plank 5.png-0b6bd96f72d80559e9b3f0aa5f993bbe.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/stone tile.png"
-dest_files=["res://.godot/imported/stone tile.png-068877414d822f15afb424a9be0ef468.ctex"]
-source_file="res://assets/tiles/stone tile.png"
-dest_files=["res://.godot/imported/stone tile.png-083a4fcbd8fa0720d8fd4ca90e98ccae.ctex"]
+source_file="res://assets/big plank 5.png"
+dest_files=["res://.godot/imported/big plank 5.png-0b6bd96f72d80559e9b3f0aa5f993bbe.ctex"]
 
 [params]
 
