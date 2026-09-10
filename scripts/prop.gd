@@ -11,13 +11,51 @@ extends StaticBody2D
 ## Its origin is at its base, which is what makes the sort read right: a
 ## character whose feet are lower down is nearer the camera.
 
-@export var height: float = 32.0
-@export var width: float = 16.0
+## How deep the footprint is. A prop blocks and shadows the patch of floor it
+## stands on, not its whole height — a lamp behind a tall shelf should throw
+## the shelf's shadow across the floor, not a wall of darkness.
+const FOOTPRINT := 7.0
+
+@export var height: float = 32.0:
+	set(value):
+		height = maxf(1.0, value)
+		queue_redraw()
+
+@export var width: float = 16.0:
+	set(value):
+		width = maxf(1.0, value)
+		_fit()
+
 @export var tint: Color = Color("6e604e")
+
+@onready var base: CollisionShape2D = $Base
+@onready var shadow: LightOccluder2D = $Shadow
 
 
 func _ready() -> void:
+	_fit()
 	queue_redraw()
+
+
+## Collision and shadow are both derived from `width`, so a wider prop is
+## wider in every sense rather than only on screen.
+func _fit() -> void:
+	if base == null or shadow == null:
+		return
+	var rect := base.shape as RectangleShape2D
+	if rect != null:
+		# Unique, or every prop in the scene resizes together.
+		rect = rect.duplicate()
+		rect.size = Vector2(width - 1.0, FOOTPRINT)
+		base.shape = rect
+	base.position = Vector2(0, -FOOTPRINT * 0.5)
+	var half := width * 0.5
+	var occluder := OccluderPolygon2D.new()
+	occluder.polygon = PackedVector2Array([
+		Vector2(-half, -FOOTPRINT), Vector2(half, -FOOTPRINT),
+		Vector2(half, 0), Vector2(-half, 0),
+	])
+	shadow.occluder = occluder
 
 
 ## Placeholder art. Replace with a Sprite2D whose offset puts the image above
