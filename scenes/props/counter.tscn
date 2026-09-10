@@ -1,0 +1,14 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/counter.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/counter end top.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/counter mid.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/counter end bottom.png" id="4"]
+
+[node name="Counter" type="Node2D"]
+script = ExtResource("1")
+length = 4
+axis = 1
+start_texture = ExtResource("2")
+middle_texture = ExtResource("3")
+end_texture = ExtResource("4")

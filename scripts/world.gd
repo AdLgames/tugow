@@ -27,6 +27,8 @@ const CELL := 16
 
 const PROP_SCENE := preload("res://scenes/prop.tscn")
 const LAMP_SCENE := preload("res://scenes/lamp.tscn")
+const COUNTER_SCENE := preload("res://scenes/props/counter.tscn")
+const TABLE_SCENE := preload("res://scenes/props/table.tscn")
 
 ## How far to search for somewhere to stand when the player has been left on
 ## top of a wall. Cells, in a widening ring.
@@ -103,6 +105,26 @@ func add_prop(cell: Vector2i, height: float = 32.0) -> Prop:
 	# The sun draws prop shadows as well as wall ones, so it has to be told.
 	sun.queue_redraw()
 	return prop
+
+
+## Stand a table on a cell. Two cells wide, so it takes the cell to the right
+## as well.
+func add_table(cell: Vector2i) -> Prop:
+	var table: Prop = TABLE_SCENE.instantiate()
+	table.position = centre_of(cell) + Vector2(World.CELL * 0.5, World.CELL * 0.5)
+	props.add_child(table)
+	sun.queue_redraw()
+	return table
+
+
+## Lay a run of counter starting at a cell and going right.
+func add_counter(cell: Vector2i, length: int = 4) -> Counter:
+	var counter: Counter = COUNTER_SCENE.instantiate()
+	counter.position = centre_of(cell) + Vector2(0, CELL * 0.5)
+	props.add_child(counter)
+	counter.length = length
+	sun.queue_redraw()
+	return counter
 
 
 ## Hang a light over a cell. Lights sit in their own container rather than

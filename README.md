@@ -159,6 +159,45 @@ wall of darkness.
 Use tile layers for floors and for walls. Use props for posts, counters,
 shelves — anything standing in the middle of the floor.
 
+## Props
+
+`scenes/prop.tscn` is the one prop. Give it a `texture` and the art is placed
+standing on its origin; leave it empty and you get a placeholder box the same
+size, which is enough to block a room out before the art exists.
+
+It measures the **opaque part** of the art, not the canvas it was drawn on.
+Twenty pixels of counter on a 32-pixel image is a twenty-pixel prop, so it
+does not collide with six pixels of nothing either side.
+
+| Property | |
+|---|---|
+| `texture` | The art. Sets `width` and `height` from it. |
+| `footprint` | How deep it is **on the floor**. Defaults to 7 px. |
+| `tint` | The placeholder box only. |
+
+**`footprint` is the one to get right.** The default suits anything you see
+the side of — a shelf, a crate, a lamp post — which stands on a shallow strip
+of floor and lets a lamp behind it throw a shadow past rather than a wall of
+darkness. Something seen from above, whose whole shape *is* on the floor,
+wants `footprint = height` or the player walks through most of it.
+
+### Counters
+
+`scenes/props/counter.tscn` lays out a run of pieces. It is many props rather
+than one wide sprite so the player sorts against the piece they are standing
+behind, not against the whole run.
+
+| Property | |
+|---|---|
+| `length` | Pieces, ends included |
+| `axis` | `DOWN` or `ACROSS`. Match the art: a piece capped top and bottom is a `DOWN` run. |
+| `start_texture`, `middle_texture`, `end_texture` | Capped, repeating, capped |
+| `flat_on_the_floor` | On for a counter or table, off for a run of shelving |
+
+Pieces are spaced by the size of the art, so they butt up whatever size they
+are drawn. `World.add_counter(cell, length)` places one from code, and
+`World.add_table(cell)` places a table.
+
 ## Tiles taller than one cell
 
 | Property | Value | Why |

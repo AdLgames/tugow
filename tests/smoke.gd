@@ -34,6 +34,7 @@ func _ready() -> void:
 
 	_check_tileset()
 	_check_map()
+	await _check_props()
 	_check_lighting()
 	await _check_walking()
 	_report()
@@ -108,6 +109,51 @@ func _check_map() -> void:
 
 	_check(_world.is_floor(_world.cell_at(_world.player.global_position)),
 		"the player starts somewhere they can stand")
+
+
+## Props built from art, rather than the placeholder box.
+func _check_props() -> void:
+	var counter := _world.add_counter(_first_open_cell(), 4)
+	await get_tree().physics_frame
+	_check(counter.get_child_count() == 4, "a counter of four is four pieces")
+	if counter.get_child_count() != 4:
+		return
+
+	var pieces := counter.get_children()
+	var first := pieces[0] as Prop
+	var last := pieces[3] as Prop
+	_check(first != null and first.texture == counter.start_texture,
+		"the first piece is the capped end")
+	_check(last != null and last.texture == counter.end_texture,
+		"and the last is the other one")
+
+	# The art is 20 pixels of counter on a 32 pixel canvas. Taking the canvas
+	# would collide six pixels of nothing either side, and the run would sit
+	# twelve pixels apart instead of butting up.
+	_check(first.width < 32.0, "a piece is as wide as its art, not its canvas (%.0f)"
+		% first.width)
+	_check(is_equal_approx(pieces[1].position.y - first.position.y, first.height),
+		"pieces butt up against each other")
+	for piece in pieces:
+		var prop := piece as Prop
+		_check(prop != null and prop.footprint > World.CELL,
+			"%s is solid across all of itself, not just its base" % prop.name)
+		_check(prop.base != null and prop.base.shape != null,
+			"%s carries a collision shape" % prop.name)
+	counter.queue_free()
+
+	# A table is seen from the side, so it keeps the shallow footprint.
+	var table := _world.add_table(_first_open_cell())
+	await get_tree().physics_frame
+	_check(table.footprint < World.CELL, "a table keeps a shallow footprint")
+	table.queue_free()
+
+
+func _first_open_cell() -> Vector2i:
+	for cell in _world.ground.get_used_cells():
+		if _world.is_floor(cell):
+			return cell
+	return Vector2i.ZERO
 
 
 func _check_lighting() -> void:
