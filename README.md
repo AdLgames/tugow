@@ -47,6 +47,7 @@ darkens the floor in front of it while open floor stays lit.
 | `scripts/player.gd` | Eight-way movement |
 | `resources/tileset.tres` | The TileSet. 16 × 16, one physics layer, one occlusion layer |
 | `tools/apply_tile_roles.gd` | Makes wall tiles solid and shadow-casting |
+| `tools/prune_missing.gd` | Repairs a tileset whose art has gone missing |
 | `assets/big plank *.png` | Floor |
 | `assets/*wall*.png`, `vertical.png` | Walls |
 
@@ -167,6 +168,31 @@ shelves — anything standing in the middle of the floor.
 | **Y Sort Origin** | `8` | Moves its sort point from the middle of the cell to the bottom |
 
 Both are in the tile inspector when a tile is selected in the TileSet panel.
+
+## When the whole project breaks at once
+
+Deleting or renaming a PNG from outside the FileSystem dock leaves the
+TileSet pointing at a path that is not there. Godot then refuses to load the
+whole resource, every layer that uses it loses its tiles, and one missing
+file reads as eight errors about scenes that are perfectly fine. The error
+naming a `.png` is the real one; the ones naming `tileset.tres` and
+`world.tscn` are consequences.
+
+Quickest fix: put a file back at that exact path — duplicating a similar one
+and renaming it will do — then remove the source properly from the TileSet
+tab.
+
+Otherwise:
+
+    godot --headless --path . --script res://tools/prune_missing.gd
+    godot --headless --path . --script res://tools/prune_missing.gd -- --apply
+
+It reads the tileset as text rather than loading it, since a tileset in that
+state cannot be loaded, and drops the dead source along with the sub-resource
+and `sources/` line that go with it. Without `--apply` it only reports.
+
+**Rename art from inside the FileSystem dock** and none of this happens —
+Godot rewrites the references for you.
 
 ## Putting your own tiles in
 
