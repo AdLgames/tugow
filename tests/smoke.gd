@@ -111,18 +111,40 @@ func _check_map() -> void:
 
 
 func _check_lighting() -> void:
-	_check(_world.night != null and _world.night.color != Color.WHITE,
-		"the scene is darkened, so the lamps have something to light")
-	var lamps := _world.lights.get_children()
-	_check(lamps.size() > 0, "there are lamps (%d)" % lamps.size())
-	for lamp in lamps:
-		_check(lamp is Lamp, "%s is a Lamp" % lamp.name)
-		if lamp is Lamp:
-			var light: PointLight2D = (lamp as Lamp).light
-			_check(light != null and light.texture != null,
-				"%s has a light texture, without which it is invisible" % lamp.name)
-			_check(light != null and light.shadow_enabled,
-				"%s casts shadows" % lamp.name)
+	_check(_world.night != null, "the scene sets an ambient level")
+
+	var sun := _world.sun
+	_check(sun != null, "there is a sun")
+	if sun == null:
+		return
+	# Drawn between the floor and everything standing on it. Before Ground and
+	# the floor covers it; after Props and it darkens the player.
+	var order := _world.get_children()
+	_check(order.find(sun) > order.find(_world.ground),
+		"the sun draws over the floor")
+	_check(order.find(sun) < order.find(_world.props),
+		"and under whatever is standing on it")
+
+	# Afternoon, so the sun is over the right of the room and the shadows
+	# fall down and to the left. Both signs matter: a shadow pointing the
+	# other way puts the sun in the wrong corner and nothing errors.
+	var shift := sun.offset()
+	_check(sun.hour > 12.0 and sun.hour < 18.0, "it is afternoon (%.1f)" % sun.hour)
+	_check(shift.y > 0.0, "shadows fall away from the top of the room")
+	_check(shift.x < 0.0, "and towards its left, so the sun is on the right")
+	_check(shift.length() < World.CELL, "and are shorter than a cell (%.1f px)"
+		% shift.length())
+	_check(not sun.shadow_cells().is_empty(),
+		"walls throw a shadow onto the floor (%d of them)" % sun.shadow_cells().size())
+
+	# No lamp is placed in the room — the sun is the light — but the lamp is
+	# still what an interior light will be, so it is checked on one built
+	# here rather than left untested until someone needs it.
+	var lamp := _world.add_lamp(_world.cell_at(_world.player.global_position))
+	_check(lamp.light != null and lamp.light.texture != null,
+		"a lamp has a light texture, without which it is invisible")
+	_check(lamp.light != null and lamp.light.shadow_enabled, "and casts shadows")
+	lamp.queue_free()
 
 
 func _check_walking() -> void:

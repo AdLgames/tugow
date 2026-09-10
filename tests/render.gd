@@ -33,104 +33,82 @@ func _ready() -> void:
 	add_child(_world)
 	await get_tree().physics_frame
 
-	await _check_lighting()
+	await _check_sun()
 	await _check_sorting()
 	_report()
 
 
-## The room should be dark, and a lamp should make its patch of floor brighter
-## than the far side of the map. Measured rather than asserted, because a
-## CanvasModulate with no lights at all also "looks dark".
-func _check_lighting() -> void:
-	var lamp := _world.lights.get_child(0) as Lamp
-	if lamp == null:
-		_fail("there is no lamp to test")
+## The wall should be throwing a shadow onto the floor beside it. Measured
+## rather than asserted, because the sun is drawn rather than lit and a
+## drawing that ended up under the floor, or behind the wall it came from,
+## looks exactly like no shadow at all.
+func _check_sun() -> void:
+	var sun := _world.sun
+	if sun == null:
+		_fail("there is no sun to test")
 		return
-	var lit_cell := _world.cell_at(lamp.global_position)
-	var dark_cell := _far_floor_from(lit_cell)
-	# Both readings are of floor, so the difference is the light and not the
-	# art underneath it.
-	var lit := await _brightness_at(lit_cell)
-	var dark := await _brightness_at(dark_cell)
-	print("  brightness — under the lamp: %.3f, far corner: %.3f" % [lit, dark])
-	_check(lit > dark + 0.03, "the lamp is brightest where it stands")
-	# The one light is meant to reach the whole room, so the far corner being
-	# dark is a failure here rather than the mood it was before.
-	_check(dark > 0.2, "and still reaches the far corner")
-
-	await _check_shadows()
-
-
-## Whether shadows actually fall is not something `shadow_enabled` proves: a
-## light with the flag set and nothing to occlude looks identical. So a lamp
-## is put right up against a wall and the same view measured twice, with the
-## shadows on and off. If the wall is casting, switching it off can only let
-## more light through.
-func _check_shadows() -> void:
-	var beside := _floor_beside_a_wall()
-	_check(not beside.is_empty(), "the map has floor up against a wall")
-	if beside.is_empty():
+	var shaded := _shaded_cell()
+	_check(not shaded.is_empty(), "a wall has floor in its shadow")
+	if shaded.is_empty():
 		return
-	var lamp := _world.add_lamp(beside[0], 120.0)
-	lamp.energy = 2.0
-	# The authored lamps would light the same walls from other angles and mask
-	# the difference, so this is the only light on for the measurement.
-	var others := _all_lights()
-	for light in others:
-		light.enabled = false
-	lamp.light.enabled = true
 
-	var shadowed := await _whole_screen_at(beside[0])
-	lamp.cast_shadows = false
-	var unshadowed := await _whole_screen_at(beside[0])
-	lamp.cast_shadows = true
+	var with_sun := await _floor_tone(shaded[0])
+	sun.visible = false
+	var without := await _floor_tone(shaded[0])
+	sun.visible = true
+	print("  floor beside the wall — sun on: %.3f, sun off: %.3f" % [with_sun, without])
+	_check(without > with_sun + 0.01, "the wall darkens the floor in front of it")
 
-	print("  brightness — shadows on: %.3f, off: %.3f" % [shadowed, unshadowed])
-	_check(unshadowed > shadowed + 0.005, "the walls cast shadows into the room")
-
-	for light in others:
-		light.enabled = true
-	lamp.queue_free()
+	# And it must not darken the whole room, which is what a shadow drawn at
+	# the wrong offset would do.
+	var open := _open_cell()
+	if not open.is_empty():
+		var lit := await _floor_tone(open[0])
+		print("  open floor: %.3f" % lit)
+		_check(lit > with_sun, "while open floor stays lit")
 
 
-## Floor with a wall next to it, so a lamp put there has something to cast off.
-func _floor_beside_a_wall() -> Array[Vector2i]:
+## The floor cell a wall's shadow falls on: one step along the shadow from a
+## wall, with nothing else on it.
+func _shaded_cell() -> Array[Vector2i]:
+	var shift := _world.sun.offset()
+	var step := Vector2i(signi(roundi(shift.x)), signi(roundi(shift.y)))
 	for cell in _world.ground.get_used_cells():
-		if not _world.is_floor(cell):
+		if not _world.is_blocked(cell):
 			continue
-		for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
-			if _world.is_blocked(cell + step):
-				return [cell]
+		var onto := cell + Vector2i(0, step.y)
+		if _world.is_floor(onto) and _world.is_floor(onto + Vector2i(0, step.y)):
+			return [onto]
 	return []
 
 
-## Averaged over the whole viewport, because a shadow falls away from the
-## light rather than under it — sampling only the middle would miss it.
-func _whole_screen_at(cell: Vector2i) -> float:
-	_world.player.global_position = _world.centre_of(cell)
+## How bright a small patch of floor is, with the player moved off it so
+## their own colour is not counted.
+func _floor_tone(cell: Vector2i) -> float:
+	_world.player.global_position = _world.centre_of(cell + Vector2i(4, 4))
 	await _settle()
 	var image := get_viewport().get_texture().get_image()
+	var middle := Vector2i(image.get_width(), image.get_height()) / 2
+	var at := _world.centre_of(cell) - _world.player.global_position
+	# The camera is centred on the player at 4x, so a world offset is four
+	# screen pixels per pixel.
+	var on_screen := middle + Vector2i(at * 4.0)
 	var total := 0.0
 	var count := 0
-	for y in range(0, image.get_height(), 3):
-		for x in range(0, image.get_width(), 3):
+	for y in range(on_screen.y - 12, on_screen.y + 12, 2):
+		for x in range(on_screen.x - 24, on_screen.x + 24, 2):
+			if x < 0 or y < 0 or x >= image.get_width() or y >= image.get_height():
+				continue
 			total += image.get_pixel(x, y).get_luminance()
 			count += 1
 	return total / maxi(1, count)
 
 
-func _all_lights() -> Array[PointLight2D]:
-	var out: Array[PointLight2D] = []
-	for lamp in _world.lights.get_children():
-		if lamp is Lamp:
-			out.append((lamp as Lamp).light)
-	return out
-
-
 func _check_sorting() -> void:
-	# Lighting would confuse a colour match, so the sorting half of the test
-	# runs with the darkness turned off.
+	# The sun's shading would confuse a colour match, so the sorting half of
+	# the test runs without it.
 	_world.night.color = Color.WHITE
+	_world.sun.visible = false
 
 	var found := _open_cell()
 	if found.is_empty():
@@ -152,25 +130,6 @@ func _check_sorting() -> void:
 	_check(behind < in_front * 0.5,
 		"and is hidden behind a prop they are standing above")
 
-
-## How bright the floor is around a cell. The camera follows the player, so
-## parking them on the cell puts it in the middle of the screen; only that
-## middle is sampled, because averaging the whole viewport dilutes a small
-## pool of light into the dark room around it until the difference vanishes.
-const SAMPLE := 240
-
-func _brightness_at(cell: Vector2i) -> float:
-	_world.player.global_position = _world.centre_of(cell)
-	await _settle()
-	var image := get_viewport().get_texture().get_image()
-	var middle := Vector2i(image.get_width(), image.get_height()) / 2
-	var total := 0.0
-	var count := 0
-	for y in range(middle.y - SAMPLE / 2, middle.y + SAMPLE / 2, 3):
-		for x in range(middle.x - SAMPLE / 2, middle.x + SAMPLE / 2, 3):
-			total += image.get_pixel(x, y).get_luminance()
-			count += 1
-	return total / maxi(1, count)
 
 
 ## How much of the player is on screen, counted in pixels of their own colour.
@@ -210,18 +169,6 @@ func _open_cell() -> Array[Vector2i]:
 			return [cell]
 	return []
 
-
-func _far_floor_from(cell: Vector2i) -> Vector2i:
-	var best := cell
-	var furthest := -1.0
-	for at in _world.ground.get_used_cells():
-		if not _world.is_floor(at):
-			continue
-		var away := Vector2(at - cell).length()
-		if away > furthest:
-			furthest = away
-			best = at
-	return best
 
 
 func _check(condition: bool, message: String) -> void:

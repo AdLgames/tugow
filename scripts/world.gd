@@ -7,6 +7,10 @@ extends Node2D
 ##   Walls  — anything solid you would rather keep off the floor layer.
 ##   Decor  — clutter drawn over everything.
 ##
+## Between Ground and Walls sits Sun, which draws the daylight shadow the
+## walls throw across the floor. See scripts/sun.gd for why that is drawn
+## rather than lit.
+##
 ## Solidity comes from the tile, never from the layer: a tile blocks you
 ## because it carries a collision shape in the TileSet, and casts a shadow
 ## because it carries an occluder. Both are applied by
@@ -29,6 +33,7 @@ const LAMP_SCENE := preload("res://scenes/lamp.tscn")
 const SPAWN_SEARCH := 12
 
 @onready var ground: TileMapLayer = $Ground
+@onready var sun: Sun = $Sun
 @onready var walls: TileMapLayer = $Walls
 @onready var decor: TileMapLayer = $Decor
 ## Everything that has to sort against the player lives in here, including
@@ -42,6 +47,9 @@ const SPAWN_SEARCH := 12
 
 
 func _ready() -> void:
+	# The sun draws between the floor and everything standing on it, which is
+	# why it is a sibling sitting after Ground rather than a child of it.
+	sun.paint(self)
 	_free_the_player()
 
 
@@ -92,6 +100,8 @@ func add_prop(cell: Vector2i, height: float = 32.0) -> Prop:
 	prop.height = height
 	prop.position = centre_of(cell) + Vector2(0, CELL * 0.5)
 	props.add_child(prop)
+	# The sun draws prop shadows as well as wall ones, so it has to be told.
+	sun.queue_redraw()
 	return prop
 
 
