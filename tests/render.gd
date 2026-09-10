@@ -48,11 +48,15 @@ func _check_lighting() -> void:
 		return
 	var lit_cell := _world.cell_at(lamp.global_position)
 	var dark_cell := _far_floor_from(lit_cell)
+	# Both readings are of floor, so the difference is the light and not the
+	# art underneath it.
 	var lit := await _brightness_at(lit_cell)
 	var dark := await _brightness_at(dark_cell)
-	print("  brightness — under the lamp: %.3f, away from it: %.3f" % [lit, dark])
-	_check(lit > dark + 0.05, "the lamp lights the floor under it")
-	_check(dark < 0.5, "and the far side of the room stays dark")
+	print("  brightness — under the lamp: %.3f, far corner: %.3f" % [lit, dark])
+	_check(lit > dark + 0.03, "the lamp is brightest where it stands")
+	# The one light is meant to reach the whole room, so the far corner being
+	# dark is a failure here rather than the mood it was before.
+	_check(dark > 0.2, "and still reaches the far corner")
 
 	await _check_shadows()
 

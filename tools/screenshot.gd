@@ -16,9 +16,21 @@ func _ready() -> void:
 		await get_tree().process_frame
 	await _shot("01_start")
 
+	# The whole room in one frame, which is the only way to judge lighting
+	# that is meant to reach every corner.
+	var camera: Camera2D = world.player.get_node("Camera")
+	var was := camera.zoom
+	var room := world.ground.get_used_rect()
+	world.player.global_position = world.centre_of(room.position + room.size / 2)
+	camera.zoom = Vector2(3.0, 3.0)
+	for _i in 20:
+		await get_tree().physics_frame
+	await _shot("02_the_room")
+	camera.zoom = was
+
 	# Stand under each lamp in turn, since the lighting is the point of most
 	# of these shots and a lamp off screen tells you nothing.
-	var index := 1
+	var index := 2
 	for lamp in world.lights.get_children():
 		world.player.global_position = (lamp as Node2D).global_position
 		for _i in 12:

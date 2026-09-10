@@ -25,9 +25,9 @@ can stand, that holding a direction moves them, and that a wall stops them.
 
 `tests/render.gd` looks at actual pixels, because sorting and lighting are
 configuration rather than code and neither raises an error when wrong. It
-checks the player is hidden behind a prop and drawn when clear, that a lamp
-lights the floor under it while the far side of the room stays dark, and —
-by measuring the same view with shadows switched on and off — that the walls
+checks the player is hidden behind a prop and drawn when clear, that the lamp
+is brightest where it stands and still reaches the far corner, and — by
+measuring the same view with shadows switched on and off — that the walls
 genuinely occlude.
 
     xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots
@@ -42,6 +42,7 @@ genuinely occlude.
 | `scenes/player.tscn` | CharacterBody2D with a feet-sized collider and the camera |
 | `scenes/prop.tscn` | A tall thing the player walks behind, which shadows the floor |
 | `scenes/lamp.tscn` | A shadow-casting light |
+| `tools/screenshot.gd` | Pictures of the room, including one of the whole thing |
 | `scripts/world.gd` | Grid helpers; asks the tiles what is solid |
 | `scripts/player.gd` | Eight-way movement |
 | `resources/tileset.tres` | The TileSet. 16 × 16, one physics layer, one occlusion layer |
@@ -87,22 +88,46 @@ the same rectangle.
 
 ## Lighting
 
-`scenes/world.tscn` has a `CanvasModulate` called **Night** that dims the
-whole scene, and a `Lights` node holding `Lamp` instances. Without the
-darkener the lamps have nothing to light and the room looks flat; set its
-colour to white and you are back in daylight.
+One light, in the room's right-hand corner, reaching every wall.
 
-A `Lamp` exposes `radius`, `color`, `energy` and `cast_shadows` in the
-inspector. Its light texture is built in code from a radial gradient, so the
-radius is a number you change rather than art you redraw. A `PointLight2D`
-with no texture at all is invisible, which reads as a broken light.
+`scenes/world.tscn` has a `CanvasModulate` called **Night** that sets the
+ambient level — what the room looks like where the lamp does not reach — and
+a `Lights` node holding the **Corner** lamp. Turn Night white and you are
+back in flat daylight; take it down towards black and the lamp becomes the
+only thing you can see by.
 
-`World.add_lamp(cell)` puts one on a cell from code.
+A `Lamp` exposes `radius`, `color`, `energy`, `cast_shadows`, `shadow_color`
+and `shadow_softness`. Its light texture is built in code from a radial
+gradient, so the radius is a number you change rather than art you redraw. A
+`PointLight2D` with no texture at all is invisible, which reads as a broken
+light. `World.add_lamp(cell)` puts one on a cell from code.
 
-Three things have to line up for a shadow to fall, and missing any one fails
-silently: the TileSet needs an **occlusion layer**, the wall tile needs an
-**occluder polygon** on it, and the light needs **shadow_enabled**. The
-render test measures the room with shadows on and off for that reason —
+### Shadow length is not a setting
+
+A 2D shadow runs from its occluder to the **edge of the light**. So a lamp
+big enough to fill the room throws shadows that cross the room, and the only
+way to shorten one is to shrink the light — which stops it filling the room.
+Coverage and shadow length are the same dial.
+
+What you can change is how *heavy* a shadow reads, with `shadow_color`. It is
+not a tint over the floor, it is what the shadowed floor is painted with:
+black gives a hard wedge, and lifting it towards the lit floor tone (the
+default, `0.44, 0.39, 0.33`) turns the same shadow into a soft dimming. That
+is what makes the shadows here read as small.
+
+Its **alpha is ignored** under the GL Compatibility renderer this project
+uses — lighten the colour, not the transparency.
+
+If you would rather have genuinely short, sharp shadows and accept the room
+going dark at the edges, drop the Corner lamp's `radius` to about `120` and
+raise Night towards white to compensate.
+
+### When a shadow does not appear
+
+Three things have to line up, and missing any one fails silently: the TileSet
+needs an **occlusion layer**, the wall tile needs an **occluder polygon** on
+it (both from `apply_tile_roles.gd`), and the light needs **shadow_enabled**.
+The render test measures the room with shadows on and off for that reason —
 `shadow_enabled` on its own proves nothing.
 
 ## What Y-sorting will and will not do

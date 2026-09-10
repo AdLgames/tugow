@@ -31,6 +31,27 @@ extends Node2D
 		cast_shadows = value
 		_apply()
 
+## What a shadowed patch of floor is painted with. This is the knob for how
+## heavy the shadows read, because a 2D shadow always reaches from its
+## occluder to the edge of the light — the only way to shorten one is to
+## shrink the light, which would stop it filling the room. Lifting this
+## towards the lit floor tone makes a long shadow read as a soft dimming
+## instead of a black wedge.
+##
+## Its alpha is ignored under the GL Compatibility renderer this project uses,
+## so lighten the *colour*, not the transparency.
+@export var shadow_color: Color = Color(0.44, 0.39, 0.33, 1):
+	set(value):
+		shadow_color = value
+		_apply()
+
+## Blur on the shadow edge, in pixels. A hard edge on a big room reads as a
+## cut-out; a few pixels of blur reads as a lamp.
+@export var shadow_softness: float = 3.0:
+	set(value):
+		shadow_softness = maxf(0.0, value)
+		_apply()
+
 @onready var light: PointLight2D = $Light
 
 
@@ -44,6 +65,10 @@ func _apply() -> void:
 	light.color = color
 	light.energy = energy
 	light.shadow_enabled = cast_shadows
+	light.shadow_color = shadow_color
+	light.shadow_filter = Light2D.SHADOW_FILTER_PCF13 if shadow_softness > 0.0 \
+		else Light2D.SHADOW_FILTER_NONE
+	light.shadow_filter_smooth = shadow_softness
 	# The gradient is square and drawn centred, so the texture has to be twice
 	# the radius across for the falloff to reach exactly that far.
 	var gradient := light.texture as GradientTexture2D
