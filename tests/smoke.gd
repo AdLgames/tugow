@@ -1,6 +1,6 @@
 extends Node
-## Proves the wireframe works: the scene loads, the room is painted, the
-## player walks, and walls stop them.
+## Proves the wireframe works: the scene loads, the painted map is solid where
+## it should be, the player walks, and walls stop them.
 ##
 ##   godot --headless --path . res://tests/smoke.tscn
 ##
@@ -9,6 +9,10 @@ extends Node
 ## someone walks into it.
 
 const DEADLINE := 30.0
+## Names that mark a texture as a wall. Kept in step with WALL_WORDS in
+## tools/apply_tile_roles.gd — if these two ever disagree, a tile is one thing
+## to the tool and another to the game.
+const WALL_WORDS := ["wall", "vertical"]
 
 var _world: World
 var _failed: Array[String] = []
@@ -28,84 +32,166 @@ func _ready() -> void:
 	add_child(_world)
 	await get_tree().physics_frame
 
-	_check(_world.ground.tile_set != null, "the ground layer has a tileset")
-	_check(_world.ground.tile_set.tile_size == Vector2i(World.CELL, World.CELL),
-		"tiles are %d square" % World.CELL)
-	_check(not _world.ground.get_used_cells().is_empty(), "a starter room is painted")
-	_check(not _world.walls.get_used_cells().is_empty(), "and walled in")
-
-	# The wall tile must actually be solid. A tile with no collision shape
-	# looks identical in the editor and is walked straight through.
-	var source := _world.walls.tile_set.get_source(World.SOURCE) as TileSetAtlasSource
-	_check(source != null, "the tileset has an atlas source")
-	if source != null:
-		var data := source.get_tile_data(World.TILE_WALL, 0)
-		_check(data != null and data.get_collision_polygons_count(0) > 0,
-			"the wall tile carries a collision shape")
-		var floor_data := source.get_tile_data(World.TILE_FLOOR, 0)
-		_check(floor_data != null and floor_data.get_collision_polygons_count(0) == 0,
-			"and the floor tile does not")
-
-	# The tall tile is still in the tileset and still needs both origins set,
-	# even though props do the occluding — see README. A tile taller than its
-	# cell with neither set draws in the wrong place.
-	if source != null:
-		var post := source.get_tile_data(World.TILE_POST, 0)
-		_check(post != null, "the tall post tile exists")
-		if post != null:
-			_check(source.get_tile_size_in_atlas(World.TILE_POST) == Vector2i(1, 2),
-				"and is two atlas cells tall")
-			_check(post.texture_origin.y < 0,
-				"with a texture origin lifting it out of its cell")
-			_check(post.y_sort_origin > 0,
-				"and a y-sort origin putting its sort point at its base")
-
-	# Props are what the player sorts against, so they must be in the same
-	# Y-sorted container as the player and nowhere else.
-	_check(_world.props.y_sort_enabled, "the props container is Y-sorted")
-	_check(_world.player.get_parent() == _world.props,
-		"and the player is in it, or nothing sorts against them")
-	_check(_world.props.get_child_count() > 1, "and there are props in the room")
-
-	_check(_world.is_blocked(Vector2i(-1, 5)), "a wall cell reads as blocked")
-	_check(not _world.is_blocked(Vector2i(5, 5)), "and a floor cell does not")
-
-	# Walking. Push right for a while and the player should move.
-	var start: Vector2 = _world.player.global_position
-	await _hold("move_right", 0.6)
-	_check(_world.player.global_position.x > start.x + 20.0,
-		"holding a direction walks the player")
-
-	# And a wall should stop them. Drive hard into the left wall.
-	_world.player.global_position = Vector2(World.CELL, World.CELL * 5)
-	await get_tree().physics_frame
-	await _hold("move_left", 1.6)
-	_check(_world.player.global_position.x > 0.0,
-		"a wall stops the player rather than letting them through")
-
-	# The grid maths agrees with itself both ways.
-	var misses := 0
-	for y in World.ROOM.size.y:
-		for x in World.ROOM.size.x:
-			var cell := Vector2i(x, y)
-			var middle := Vector2(cell) * World.CELL + Vector2.ONE * (World.CELL * 0.5)
-			if _world.cell_at(middle) != cell:
-				misses += 1
-	_check(misses == 0, "every cell survives the world-to-grid round trip")
-
-	print("Smoke: room %s, player at %s." % [World.ROOM.size, _world.player.global_position])
+	_check_tileset()
+	_check_map()
+	_check_lighting()
+	await _check_walking()
 	_report()
 
 
-## Hold an action down for real physics frames, the way a player would.
-func _hold(action: String, seconds: float) -> void:
-	Input.action_press(action)
-	var left := seconds
-	while left > 0.0:
-		await get_tree().physics_frame
-		left -= get_tree().root.get_physics_process_delta_time()
-	Input.action_release(action)
+func _check_tileset() -> void:
+	var tile_set: TileSet = _world.ground.tile_set
+	_check(tile_set != null, "the ground layer has a tileset")
+	if tile_set == null:
+		return
+	_check(tile_set.tile_size == Vector2i(World.CELL, World.CELL),
+		"tiles are %d square" % World.CELL)
+	_check(tile_set.get_physics_layers_count() > 0, "there is a physics layer")
+	_check(tile_set.get_occlusion_layers_count() > 0,
+		"and an occlusion layer, without which nothing casts a shadow")
+	if tile_set.get_physics_layers_count() == 0 or tile_set.get_occlusion_layers_count() == 0:
+		return
+
+	# Every source is checked, not a sample. A single wall tile that missed
+	# its collision shape is a hole in the room you find by falling through it.
+	var walls := 0
+	var floors := 0
+	var wrong: Array[String] = []
+	for i in tile_set.get_source_count():
+		var id := tile_set.get_source_id(i)
+		var atlas := tile_set.get_source(id) as TileSetAtlasSource
+		if atlas == null or atlas.texture == null:
+			wrong.append("source %d has no texture" % id)
+			continue
+		var name := atlas.texture.resource_path.get_file()
+		var solid := _is_wall(name)
+		if solid:
+			walls += 1
+		else:
+			floors += 1
+		_check(atlas.get_tiles_count() > 0, "%s has a tile in it" % name)
+		for t in atlas.get_tiles_count():
+			var data := atlas.get_tile_data(atlas.get_tile_id(t), 0)
+			if data == null:
+				continue
+			var blocks := data.get_collision_polygons_count(0) > 0
+			var shadows := data.get_occluder_polygons_count(0) > 0
+			if blocks != solid:
+				wrong.append("%s %s solid" % [name, "is" if blocks else "is not"])
+			if shadows != solid:
+				wrong.append("%s %s a shadow" % [name, "casts" if shadows else "casts no"])
+	_check(walls > 0, "some sources are walls (%d)" % walls)
+	_check(floors > 0, "and some are floor (%d)" % floors)
+	_check(wrong.is_empty(), "every tile blocks and shadows to match its name")
+	for w in wrong:
+		print("       %s" % w)
+
+
+func _check_map() -> void:
+	var painted := _world.ground.get_used_cells().size()
+	_check(painted > 0, "the map has tiles painted on it (%d)" % painted)
+	var solid := 0
+	var walkable := 0
+	for cell in _world.ground.get_used_cells():
+		if _world.is_blocked(cell):
+			solid += 1
+		elif _world.is_floor(cell):
+			walkable += 1
+	_check(solid > 0, "some of them are solid (%d)" % solid)
+	_check(walkable > 0, "and some are somewhere to stand (%d)" % walkable)
+
+	# The layers are only useful together if they agree on where a cell is.
+	# A nudged layer puts its collision half a tile off from its art.
+	for layer in _world.layers():
+		_check(layer.position == Vector2.ZERO,
+			"the %s layer sits on the grid" % layer.name)
+
+	_check(_world.is_floor(_world.cell_at(_world.player.global_position)),
+		"the player starts somewhere they can stand")
+
+
+func _check_lighting() -> void:
+	_check(_world.night != null and _world.night.color != Color.WHITE,
+		"the scene is darkened, so the lamps have something to light")
+	var lamps := _world.lights.get_children()
+	_check(lamps.size() > 0, "there are lamps (%d)" % lamps.size())
+	for lamp in lamps:
+		_check(lamp is Lamp, "%s is a Lamp" % lamp.name)
+		if lamp is Lamp:
+			var light: PointLight2D = (lamp as Lamp).light
+			_check(light != null and light.texture != null,
+				"%s has a light texture, without which it is invisible" % lamp.name)
+			_check(light != null and light.shadow_enabled,
+				"%s casts shadows" % lamp.name)
+
+
+func _check_walking() -> void:
+	var start := _world.cell_at(_world.player.global_position)
+
+	# Walking into open floor should move you.
+	var open := _open_direction(start)
+	_check(open != Vector2i.ZERO, "there is open floor next to the player")
+	if open != Vector2i.ZERO:
+		var before := _world.player.global_position
+		await _walk(Vector2(open), 0.6)
+		_check(_world.player.global_position.distance_to(before) > World.CELL * 0.5,
+			"holding a direction walks")
+
+	# And walking into a wall should not. The player is moved next to one
+	# rather than hoping they spawned beside it, so the test means the same
+	# thing whatever the map looks like.
+	var spot := _floor_beside_a_wall()
+	_check(not spot.is_empty(), "the map has floor up against a wall")
+	if spot.is_empty():
+		return
+	_world.player.global_position = _world.centre_of(spot[0])
 	await get_tree().physics_frame
+	var into := _wall_direction(spot[0])
+	var at_wall := _world.player.global_position
+	await _walk(Vector2(into), 1.2)
+	_check(_world.player.global_position.distance_to(at_wall) < World.CELL * 1.5,
+		"and a wall stops you")
+
+
+## Hold a direction for a while and let physics run.
+func _walk(direction: Vector2, seconds: float) -> void:
+	var steps := int(seconds / get_physics_process_delta_time())
+	for _i in steps:
+		_world.player.walk(direction)
+		await get_tree().physics_frame
+
+
+func _open_direction(from: Vector2i) -> Vector2i:
+	for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
+		if _world.is_floor(from + step) and _world.is_floor(from + step * 2):
+			return step
+	return Vector2i.ZERO
+
+
+## A cell you can stand in with a wall next to it. Empty when the map has
+## none, which is worth failing on: a room with no walls is not a room.
+func _floor_beside_a_wall() -> Array[Vector2i]:
+	for cell in _world.ground.get_used_cells():
+		if not _world.is_floor(cell):
+			continue
+		if _wall_direction(cell) != Vector2i.ZERO:
+			return [cell]
+	return []
+
+
+func _wall_direction(from: Vector2i) -> Vector2i:
+	for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
+		if _world.is_blocked(from + step):
+			return step
+	return Vector2i.ZERO
+
+
+func _is_wall(name: String) -> bool:
+	var lower := name.to_lower()
+	for word in WALL_WORDS:
+		if lower.contains(word):
+			return true
+	return false
 
 
 func _check(condition: bool, message: String) -> void:

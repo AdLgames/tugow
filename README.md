@@ -1,10 +1,10 @@
 # Bazaar Wireframe
 
-A bare top-down 2D skeleton in Godot 4.4: three tile layers, a player that
-walks, a camera that follows, and walls that stop you. Orthogonal square
-grid, **64 × 64** per tile.
+A top-down 2D skeleton in Godot: tile layers, a player that walks, a camera
+that follows, walls that stop you, and lamps that throw shadows off them.
+Orthogonal square grid, **16 × 16** per tile.
 
-Press Play and you are standing in a room.
+Press Play and you are standing in a lit room.
 
 ## Running it
 
@@ -17,10 +17,18 @@ Press Play and you are standing in a room.
     GODOT=/path/to/godot tools/run_tests.sh
 
 `tests/smoke.gd` loads the real scene and checks the things that break first:
-that the wall tile actually carries a collision shape (a tile with none looks
-identical in the editor and is walked straight through), that the floor tile
-does not, that holding a direction moves the player, that a wall stops them,
-and that world coordinates and grid cells agree both ways.
+that **every** wall tile carries a collision shape and an occluder (a tile
+missing either looks identical in the editor — one is a hole in the wall, the
+other a wall that casts no shadow), that no floor tile carries them, that the
+map has both solid and walkable cells, that the player starts somewhere they
+can stand, that holding a direction moves them, and that a wall stops them.
+
+`tests/render.gd` looks at actual pixels, because sorting and lighting are
+configuration rather than code and neither raises an error when wrong. It
+checks the player is hidden behind a prop and drawn when clear, that a lamp
+lights the floor under it while the far side of the room stays dark, and —
+by measuring the same view with shadows switched on and off — that the walls
+genuinely occlude.
 
     xvfb-run godot --path . res://tools/screenshot.tscn -- --dir=/tmp/shots
 
@@ -30,48 +38,72 @@ and that world coordinates and grid cells agree both ways.
 
 | | |
 |---|---|
-| `scenes/world.tscn` | The room. Three TileMapLayers, the player, the camera |
-| `scenes/player.tscn` | CharacterBody2D with a feet-sized collider |
-| `scripts/world.gd` | Paints the starter room; grid helpers |
+| `scenes/world.tscn` | The room: tile layers, props, lights, the player |
+| `scenes/player.tscn` | CharacterBody2D with a feet-sized collider and the camera |
+| `scenes/prop.tscn` | A tall thing the player walks behind, which shadows the floor |
+| `scenes/lamp.tscn` | A shadow-casting light |
+| `scripts/world.gd` | Grid helpers; asks the tiles what is solid |
 | `scripts/player.gd` | Eight-way movement |
-| `scenes/prop.tscn` | A tall thing the player can walk behind |
-| `resources/tileset.tres` | The TileSet. 64 × 64, one physics layer |
-| `assets/wood tile.png` | Your floor |
-| `assets/stone tile.png` | Your wall — carries the collision |
-| `assets/placeholder_tiles.png` | Placeholder art, including the tall-tile example |
+| `resources/tileset.tres` | The TileSet. 16 × 16, one physics layer, one occlusion layer |
+| `tools/apply_tile_roles.gd` | Makes wall tiles solid and shadow-casting |
+| `assets/big plank *.png` | Floor |
+| `assets/*wall*.png`, `vertical.png` | Walls |
 
 ## The layers
 
 | Layer | For | Collision | Sorting |
 |---|---|---|---|
-| `Ground` | Floor | None | None — nothing walks behind a floor |
-| `Walls` | Solid walls at the room's edge | From the tile | Y-sorted (against each other only) |
-| `Decor` | Flat clutter | None | Y-sorted (against each other only) |
+| `Ground` | Floor, and the walls painted into it | From the tile | None |
+| `Walls` | Solid tiles you would rather keep off the floor layer | From the tile | Y-sorted (against each other only) |
+| `Decor` | Flat clutter | From the tile | Y-sorted (against each other only) |
 | `Props` | **Tall things the player walks behind** | From the prop | Y-sorted with the player |
+| `Lights` | Lamps | — | — |
 
-Collision comes from the **tile**, not from the layer. A tile is solid because
-you gave it a collision shape in the TileSet, and only then. That is why the
-smoke test checks for one.
+Solidity comes from the **tile**, never from the layer. A tile blocks you
+because it carries a collision shape, and shadows because it carries an
+occluder. So a wall painted onto `Ground` is exactly as solid as one on
+`Walls` — which matters, because the map here was painted by hand and its
+walls are on `Ground`. `World.is_blocked()` asks every layer for that reason.
 
-## Do I need to configure tile properties?
+## Making tiles solid
 
-**Floor tiles: no.** Slice and paint. Nothing else.
+Don't do it by hand, twenty-four times. Run:
 
-**Anything solid: yes — a collision shape.** Select the tile, open **Physics**
-in the tile inspector, and draw a rectangle on physics layer 0. A tile with no
-shape looks identical in the editor and is walked straight through; the smoke
-test checks for one on the wall tile for exactly that reason.
+    godot --headless --path . --script res://tools/apply_tile_roles.gd
 
-**Tiles taller than one cell: two origins.** For a 16 x 32 tile in a 16 grid:
+It decides from the texture's filename: anything containing **wall** or
+**vertical** becomes solid and casts a shadow; everything else is floor and
+has both stripped, so a tile that was solid by accident stops being solid.
+Re-run it whenever you add art — it rewrites the shapes rather than stacking
+another copy on top.
 
-| Property | Value | Why |
-|---|---|---|
-| Size in atlas | 1 x 2 | It spans two atlas cells |
-| **Texture Origin** | `(0, -8)` | Lifts it so its base sits on its cell instead of straddling it |
-| **Y Sort Origin** | `8` | Moves its sort point from the middle of the cell to the bottom |
+If your art is named differently, edit `WALL_WORDS` at the top of that file
+**and** the copy in `tests/smoke.gd`. The test keeps its own list precisely so
+the two have to be kept in step deliberately.
 
-Both are in the tile inspector when a tile is selected in the TileSet panel.
-`4:0` in `resources/tileset.tres` is a worked example.
+To do it by hand instead: select the tile, open **Physics** in the tile
+inspector and draw a rectangle on physics layer 0, then **Occlusion** and draw
+the same rectangle.
+
+## Lighting
+
+`scenes/world.tscn` has a `CanvasModulate` called **Night** that dims the
+whole scene, and a `Lights` node holding `Lamp` instances. Without the
+darkener the lamps have nothing to light and the room looks flat; set its
+colour to white and you are back in daylight.
+
+A `Lamp` exposes `radius`, `color`, `energy` and `cast_shadows` in the
+inspector. Its light texture is built in code from a radial gradient, so the
+radius is a number you change rather than art you redraw. A `PointLight2D`
+with no texture at all is invisible, which reads as a broken light.
+
+`World.add_lamp(cell)` puts one on a cell from code.
+
+Three things have to line up for a shadow to fall, and missing any one fails
+silently: the TileSet needs an **occlusion layer**, the wall tile needs an
+**occluder polygon** on it, and the light needs **shadow_enabled**. The
+render test measures the room with shadows on and off for that reason —
+`shadow_enabled` on its own proves nothing.
 
 ## What Y-sorting will and will not do
 
@@ -82,48 +114,49 @@ set, and no error is raised. The player simply walks over the top of it.
 
 So **anything the player must pass behind is a prop, not a tile**:
 `scenes/prop.tscn`, added to the `Props` node, which is Y-sorted and contains
-the player. `World.add_prop(cell)` puts one on a cell for you.
+the player. `World.add_prop(cell)` puts one on a cell for you. A prop blocks
+and shadows the patch of floor it stands on rather than its whole height, so
+a lamp behind a shelf throws the shelf's shadow across the floor instead of a
+wall of darkness.
 
-Use tile layers for floors and for walls at the edge of the room, where
-nothing ever needs to walk behind them. Use props for posts, counters,
+Use tile layers for floors and for walls. Use props for posts, counters,
 shelves — anything standing in the middle of the floor.
 
-`tests/render.gd` checks this by counting pixels of the player on screen: zero
-when standing behind a prop, about sixteen hundred when nothing is in the way.
-It is the only way to catch a sorting mistake, because getting it wrong throws
-no error.
+## Tiles taller than one cell
+
+| Property | Value | Why |
+|---|---|---|
+| Size in atlas | 1 x 2 | It spans two atlas cells |
+| **Texture Origin** | `(0, -8)` | Lifts it so its base sits on its cell instead of straddling it |
+| **Y Sort Origin** | `8` | Moves its sort point from the middle of the cell to the bottom |
+
+Both are in the tile inspector when a tile is selected in the TileSet panel.
 
 ## Putting your own tiles in
 
-1. Drop your PNG in `assets/`.
-2. Open `resources/tileset.tres`, or select a layer in `scenes/world.tscn` and
-   open the **TileSet** panel at the bottom.
-3. Drag the PNG in. Godot offers to slice it at 64 × 64 — say yes.
-4. For any tile that should be solid: select it, open **Physics** in the tile
-   inspector, and draw a rectangle on physics layer 0.
-5. Switch to the **TileMap** tab and paint.
+1. Drop your PNG in `assets/`, named so `apply_tile_roles.gd` can tell what
+   it is — a wall wants **wall** in the name.
+2. Select a layer in `scenes/world.tscn` and open the **TileSet** panel at
+   the bottom of the editor.
+3. Drag the PNG in. A 16 × 16 image becomes one tile.
+4. Run `apply_tile_roles.gd`.
+5. Switch to the **TileMap** tab — the one next to **TileSet** — pick the
+   source on the left, tap a tile, tap the map. The **TileSet** tab edits a
+   tile's properties and does not paint.
 
 ## Tile size
 
-**16 x 16.** Pixel art is kept at its native size and the camera is zoomed
+**16 × 16.** Pixel art is kept at its native size and the camera is zoomed
 instead (`zoom = 4` on the Camera2D in `scenes/player.tscn`), so nothing is
 ever resampled and the pixels stay square.
 
 Your art must match. A texture smaller than one region makes a source with
 **zero tiles in it** — nothing appears in the palette and nothing can be
-painted, which is exactly what a 16 x 16 image does in a 64 x 64 tileset.
-`tools/tileset_doctor.gd` says so in as many words.
+painted. `tools/tileset_doctor.gd` says so in as many words.
 
 Changing the size means changing it in three places: `tile_size` in the
 TileSet, the region size on each atlas source, and `World.CELL`. Everything
 else — the player, the props, the collision shapes — is expressed in cells.
-
-## The starter room
-
-`World._paint_starter_room()` paints a 20 × 14 walled room in code so the
-project runs before anything has been painted by hand. It only runs when both
-layers are empty, so **the moment you paint anything it stops** — you will not
-find code fighting your map. Delete the function when you no longer want it.
 
 ## Where to build from here
 
@@ -132,8 +165,11 @@ find code fighting your map. Delete the function when you no longer want it.
   the feet rather than the whole body, which is what makes a character read as
   standing *in* the room instead of floating over it. `Player.facing` is
   already tracked for picking an animation.
-- **Interaction.** `World.cell_at()` turns a position into a grid cell and
-  `World.is_blocked()` asks the Walls layer whether it is solid — ask the
-  layer rather than keeping a second list that could disagree with it.
-- **A bigger map.** The layers are unbounded; paint as far as you like. The
-  camera follows the player, so nothing needs to change.
+- **Something other than the keyboard driving the player.** `Player.walk()`
+  takes a direction for one physics frame and the keyboard wins while it is
+  held, so NPCs, cutscenes and tests all use the same movement code instead of
+  a second path that drifts out of step with it.
+- **Interaction.** `World.cell_at()` turns a position into a grid cell,
+  `World.is_blocked()` says whether it is solid and `World.is_floor()` whether
+  it is somewhere to stand.
+- **A bigger map.** The layers are unbounded; paint as far as you like.

@@ -1,6 +1,7 @@
 class_name Player
 extends CharacterBody2D
-## Eight-way walking, with collision against the Walls layer.
+## Eight-way walking. What stops them is the collision shape on the tile
+## they walk into, whichever layer it was painted on.
 ##
 ## The sprite is a placeholder rectangle drawn in code. Replace it with an
 ## AnimatedSprite2D when you have art: keep the CollisionShape2D where it is,
@@ -21,9 +22,23 @@ const SIZE := Vector2(10, 14)
 ## Which way they are facing, for when there are animations to pick.
 var facing := Vector2.DOWN
 
+## Where something other than the keyboard wants them to go this frame.
+var _asked := Vector2.ZERO
+
+
+## Walk this way for one physics frame. Lets a test, a cutscene or an NPC
+## drive the same body the keyboard does, instead of a second movement path
+## that can drift out of step with this one. The keyboard wins while it is
+## being held, so this never fights a player.
+func walk(direction: Vector2) -> void:
+	_asked = direction.limit_length(1.0)
+
 
 func _physics_process(delta: float) -> void:
 	var wish := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if wish == Vector2.ZERO:
+		wish = _asked
+	_asked = Vector2.ZERO
 	if wish.length_squared() > 0.0:
 		velocity = velocity.move_toward(wish * speed, acceleration * delta)
 		facing = wish.normalized()

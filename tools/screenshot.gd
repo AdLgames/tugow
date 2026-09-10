@@ -15,18 +15,26 @@ func _ready() -> void:
 	for _i in 8:
 		await get_tree().process_frame
 	await _shot("01_start")
-	# Walk a little, so the camera has followed and the shot is not static.
-	# Stand in the cell *above* a post — not inside it, which is solid and
-	# would simply shove the player back out. From there the player's body
-	# overlaps the post's upper half and should be hidden behind it.
-	world.player.global_position = Vector2(6.5, 5.75) * float(World.CELL)
-	for _i in 4:
+
+	# Stand under each lamp in turn, since the lighting is the point of most
+	# of these shots and a lamp off screen tells you nothing.
+	var index := 1
+	for lamp in world.lights.get_children():
+		world.player.global_position = (lamp as Node2D).global_position
+		for _i in 12:
+			await get_tree().physics_frame
+		await _shot("0%d_under_%s" % [index + 1, (lamp as Node2D).name.to_lower()])
+		index += 1
+
+	# A prop, to show the sorting. Stand in the cell *above* it — not inside
+	# it, which is solid and would simply shove the player back out. From
+	# there the player's body overlaps the prop and should be hidden by it.
+	var stand := world.cell_at(world.player.global_position)
+	world.add_prop(stand + Vector2i.DOWN * 2, 32.0)
+	world.player.global_position = world.centre_of(stand + Vector2i.DOWN)
+	for _i in 12:
 		await get_tree().physics_frame
-	await _shot("02_behind_a_post")
-	world.player.global_position = Vector2(6.5, 7.8) * float(World.CELL)
-	for _i in 4:
-		await get_tree().physics_frame
-	await _shot("03_in_front_of_a_post")
+	await _shot("0%d_behind_a_prop" % [index + 1])
 	Input.action_press("move_right")
 	Input.action_press("move_down")
 	for _i in 40:
@@ -35,7 +43,7 @@ func _ready() -> void:
 	Input.action_release("move_down")
 	for _i in 8:
 		await get_tree().process_frame
-	await _shot("04_walked")
+	await _shot("0%d_walked" % [index + 2])
 	get_tree().quit(0)
 
 

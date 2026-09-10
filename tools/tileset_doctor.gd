@@ -16,7 +16,6 @@ func _ready() -> void:
 	for path in found:
 		_report(path)
 	_scan_scenes()
-	_scan_stale()
 	get_tree().quit(0)
 
 
@@ -51,6 +50,9 @@ func _report(path: String) -> void:
 	print("  physics layers: %d" % tile_set.get_physics_layers_count())
 	if tile_set.get_physics_layers_count() == 0:
 		print("  ^ no physics layer, so no tile can ever be solid")
+	print("  occlusion layers: %d" % tile_set.get_occlusion_layers_count())
+	if tile_set.get_occlusion_layers_count() == 0:
+		print("  ^ no occlusion layer, so no tile can ever cast a shadow")
 	print("  sources: %d" % tile_set.get_source_count())
 	if tile_set.get_source_count() == 0:
 		print("  ^ nothing in it. Selecting this tileset gives you an empty")
@@ -74,8 +76,9 @@ func _report_atlas(id: int, atlas: TileSetAtlasSource, tile_set: TileSet) -> voi
 	var tex := atlas.texture
 	var size := tex.get_size() if tex != null else Vector2.ZERO
 	var region := atlas.texture_region_size
-	print("  [%d] ATLAS — %d tiles, region %s, texture %s"
-		% [id, atlas.get_tiles_count(), region, size])
+	var art := tex.resource_path.get_file() if tex != null else "no texture"
+	print("  [%d] %s — %d tiles, region %s, texture %s"
+		% [id, art, atlas.get_tiles_count(), region, size])
 	if tex == null:
 		print("      ^ no texture")
 		return
@@ -112,25 +115,21 @@ func _report_atlas(id: int, atlas: TileSetAtlasSource, tile_set: TileSet) -> voi
 		if data != null and tile_set.get_physics_layers_count() > 0 \
 				and data.get_collision_polygons_count(0) > 0:
 			solid += 1
-	print("      %d of %d tiles carry a collision shape" % [solid, atlas.get_tiles_count()])
+	var shadowing := 0
+	for i in atlas.get_tiles_count():
+		var coords := atlas.get_tile_id(i)
+		var data := atlas.get_tile_data(coords, 0)
+		if data != null and tile_set.get_occlusion_layers_count() > 0 \
+				and data.get_occluder_polygons_count(0) > 0:
+			shadowing += 1
+	print("      %d solid, %d casting shadows, of %d tiles"
+		% [solid, shadowing, atlas.get_tiles_count()])
+	if solid != shadowing:
+		print("      ^ a wall that blocks but casts no shadow (or the reverse)")
+		print("        is almost always a source the roles tool has not seen.")
+		print("        Run: godot --headless --path . --script "
+			+ "res://tools/apply_tile_roles.gd")
 
-
-## Files from an earlier layout of this project. Having them about is what
-## produces editor errors that look unrelated to whatever you were doing.
-func _scan_stale() -> void:
-	print("\n=== files that should not be here ===")
-	var stale: Array[String] = [
-		"res://scenes/main.tscn", "res://scenes/painted_map.tscn",
-		"res://resources/bazaar_tileset.tres", "res://assets/tiles",
-		"res://scripts/ui",
-	]
-	var any := false
-	for path in stale:
-		if FileAccess.file_exists(path) or DirAccess.dir_exists_absolute(path):
-			print("  %s  <- left over, delete it" % path)
-			any = true
-	if not any:
-		print("  none — the project is clean")
 
 
 func _scan_scenes() -> void:
