@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG "CMakeFiles/modal-render.dir/harness/src/main.cpp.o" -o modal-render  libmodal_core.a 

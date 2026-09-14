@@ -1,0 +1,6 @@
+/home/user/tugow/build/CMakeFiles/modal_core.dir
+/home/user/tugow/build/CMakeFiles/modal-render.dir
+/home/user/tugow/build/CMakeFiles/modal_tests.dir
+/home/user/tugow/build/CMakeFiles/test.dir
+/home/user/tugow/build/CMakeFiles/edit_cache.dir
+/home/user/tugow/build/CMakeFiles/rebuild_cache.dir
