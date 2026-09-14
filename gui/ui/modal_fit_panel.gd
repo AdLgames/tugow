@@ -630,8 +630,10 @@ func _refresh() -> void:
 	else:
 		_readouts["strike"].text = "UNIT GAINS"
 
-	_warning_label.text = "\n".join(model.warnings) if model.warnings.size() > 0 else ""
-	_rebuild_dropped(model)
+	var all_warnings := PackedStringArray(model.warnings)
+	all_warnings.append_array(model.tweak_warnings)
+	_warning_label.text = "\n".join(all_warnings) if all_warnings.size() > 0 else ""
+	_rebuild_dropped(model, all_warnings)
 
 
 func _clear_dropped() -> void:
@@ -639,16 +641,16 @@ func _clear_dropped() -> void:
 		child.queue_free()
 
 
-func _rebuild_dropped(model: ModalModel) -> void:
+func _rebuild_dropped(model: ModalModel, all_warnings: PackedStringArray) -> void:
 	_clear_dropped()
-	if model.warnings.is_empty():
+	if all_warnings.is_empty():
 		var none := _value_label("every mode in the file is voiced at this rate", 9,
 				ModalTheme.MUTED, ModalTheme.mono())
 		none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_dropped_list.add_child(none)
 		return
 
-	for warning in model.warnings:
+	for warning in all_warnings:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override(&"separation", 9)
 

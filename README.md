@@ -204,8 +204,8 @@ tests/     doctest — 47 cases, 4520 assertions        MIT
 
 `gui/` is a Godot 4 project that runs both as a standalone desktop application
 and, through `addons/modal_fit`, as a main-screen tab inside the editor. It is
-silent: every plot is computed from the same excitation and resonator maths the
-core uses, but nothing reaches an audio device until week 3. Its arithmetic is
+audible: it synthesises each strike with a GDScript port of `bank.cpp`, checked
+against a `modal-render` golden to within one part in 32767. Its arithmetic is
 held to the C++ by `gui/tests/test_parity.gd`, whose expected values came from
 running `core/` rather than from running the port. `gui/README.md` has the rest
 — including the four things the panel had to correct about its own mockup once

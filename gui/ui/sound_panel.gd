@@ -30,6 +30,8 @@ var _reset_button: Button
 var _save_dialog: FileDialog
 var _open_dialog: FileDialog
 var _model_entries: Array[Dictionary] = []
+var _audition: Audition
+var _strike_button: Button
 
 
 func bind(new_state: FitState) -> void:
@@ -44,9 +46,37 @@ func bind(new_state: FitState) -> void:
 
 
 func _ready() -> void:
+	_audition = Audition.new()
+	add_child(_audition)
+	_audition.rendered.connect(_on_rendered)
 	_build()
 	if state != null:
 		_refresh()
+
+
+## Space strikes the object, the way a sampler's audition key does. Nothing
+## else on this screen takes a keypress, so there is nothing to steal it from.
+func _shortcut_input(event: InputEvent) -> void:
+	if not is_visible_in_tree():
+		return
+	if event is InputEventKey and (event as InputEventKey).pressed \
+			and not (event as InputEventKey).echo \
+			and (event as InputEventKey).keycode == KEY_SPACE:
+		_strike()
+		get_viewport().set_input_as_handled()
+
+
+func _strike() -> void:
+	if _audition != null and state != null and state.is_loaded():
+		_audition.strike(state)
+
+
+func _on_rendered(_samples: PackedFloat32Array, milliseconds: float) -> void:
+	# Render cost is worth showing rather than hiding: it is the number that
+	# decides whether this stays GDScript or becomes part of the GDExtension.
+	# Zero means the cache answered, which is the common case.
+	_readouts["render_cost"].text = ("synthesised in %.0f ms" % milliseconds
+			if milliseconds > 0.0 else "replayed from cache")
 
 
 # --- construction ------------------------------------------------------------
@@ -188,6 +218,7 @@ func _build_shape_module() -> Control:
 	_size.setup("Size", "larger", "smaller",
 			ModelTweak.SIZE_MIN, ModelTweak.SIZE_MAX, 0.01, 1.0)
 	_size.value_changed.connect(_on_tweak_changed)
+	_size.drag_ended.connect(func() -> void: _strike())
 
 	_ring = LabelledSlider.new()
 	_ring.custom_minimum_size.x = 180
@@ -196,6 +227,7 @@ func _build_shape_module() -> Control:
 	_ring.setup("Ring", "dead", "ringing",
 			ModelTweak.RING_MIN, ModelTweak.RING_MAX, 0.01, 1.0)
 	_ring.value_changed.connect(_on_tweak_changed)
+	_ring.drag_ended.connect(func() -> void: _strike())
 
 	_striker = LabelledSlider.new()
 	_striker.custom_minimum_size.x = 180
@@ -204,6 +236,7 @@ func _build_shape_module() -> Control:
 	_striker.setup("Striker", "hard, small", "soft",
 			ModelTweak.STRIKER_MIN, ModelTweak.STRIKER_MAX, 0.005, 0.15)
 	_striker.value_changed.connect(_on_tweak_changed)
+	_striker.drag_ended.connect(func() -> void: _strike())
 
 	body.add_child(faders)
 	body.add_child(_caption(
@@ -231,11 +264,31 @@ func _build_hit_module() -> Control:
 	body.add_child(_hit)
 	_hit.setup("How hard you hit it", "a nudge", "a hard knock",
 			VelocityCurveView.VELOCITY_MIN, VelocityCurveView.VELOCITY_MAX, 0.05, 2.0)
+	# Moving the fader strikes, so the timbre change is something you hear
+	# rather than read off a centroid. Released rather than continuously, or
+	# dragging would fire a strike every frame.
 	_hit.value_changed.connect(func(v: float) -> void: state.set_velocity(v))
+	_hit.drag_ended.connect(func() -> void: _strike())
+
+	var strike_row := HBoxContainer.new()
+	strike_row.add_theme_constant_override(&"separation", 12)
+	_strike_button = Button.new()
+	_strike_button.text = "STRIKE  ·  SPACE"
+	_strike_button.focus_mode = Control.FOCUS_NONE
+	_strike_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_strike_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_strike_button.pressed.connect(_strike)
+	_style_button(_strike_button, true)
+	strike_row.add_child(_strike_button)
+	_readouts["render_cost"] = _label("", 8, ModalTheme.MUTED, ModalTheme.mono(), 0.4)
+	_readouts["render_cost"].size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	strike_row.add_child(_readouts["render_cost"])
+	body.add_child(strike_row)
 
 	body.add_child(_caption(
 		"Not saved. In a game this comes from the collision, every time — which is "
-		+ "why the same object never sounds quite the same twice."))
+		+ "why the same object never sounds quite the same twice. Every strike here "
+		+ "is synthesised from the model, not a recording played back."))
 	return module
 
 
@@ -267,9 +320,13 @@ static func _pretty_name(path: String) -> String:
 	return path.get_file().get_basename().replace("_", " ").capitalize()
 
 
+## Picking a sound plays it. Browsing a sound library by reading descriptions
+## is not browsing; this is the behaviour every sampler has had since the
+## machines this panel is dressed as.
 func _on_preset_chosen(path: String) -> void:
 	state.load_model(path)
 	_preset_list.set_entries(_model_entries, state.model_path)
+	_strike()
 
 
 func _on_tweak_changed(_value: float) -> void:
@@ -383,13 +440,41 @@ func _refresh() -> void:
 	# engine is built to avoid, so it is not left in caption grey.
 	_readouts["hint"].add_theme_color_override(&"font_color",
 			ModalTheme.RED if SoundWords.is_flat(low, high) else ModalTheme.MUTED)
-	_readouts["warning"].text = "\n".join(model.warnings) if model.warnings.size() > 0 else ""
+	_readouts["warning"].text = _tweak_warning(model)
 
 	# Readouts in the units the control is actually in.
 	_size.set_readout("%d Hz" % roundi(SoundWords.fundamental(model)))
 	_ring.set_readout("%.2f s" % SoundWords.longest_decay(model))
 	_striker.set_readout("%.2f ms" % state.striker_ms)
 	_hit.set_readout("%.2f m/s" % state.velocity)
+
+
+## What a tweak has cost the object, in the screen's own language.
+##
+## The loader's wording — "dropped mode 11 at 22534.5 Hz: outside 20 to 21600
+## Hz at this sample rate" — is correct and belongs on Analysis. Here it is
+## noise: it names an index the user has never seen, in units they did not ask
+## for, about a decision the file made before they touched anything. Only what
+## *their* controls caused is worth saying, and only as a consequence.
+func _tweak_warning(model: ModalModel) -> String:
+	if model.tweak_warnings.is_empty():
+		return ""
+	var dropped := 0
+	var clamped := false
+	for warning in model.tweak_warnings:
+		if warning.begins_with("dropped mode"):
+			dropped += 1
+		else:
+			clamped = true
+
+	var parts: PackedStringArray = []
+	if dropped > 0:
+		# Shrinking pushes the top modes past what the sample rate can carry.
+		parts.append("%d %s too high to play at this size, so the object has lost some of its top end. Make it larger to get them back." % [
+			dropped, "mode is" if dropped == 1 else "modes are"])
+	if clamped:
+		parts.append("Some decays have hit the longest the format allows.")
+	return " ".join(parts)
 
 
 # --- small builders ----------------------------------------------------------

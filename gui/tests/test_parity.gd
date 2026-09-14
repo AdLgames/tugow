@@ -63,6 +63,7 @@ func _init() -> void:
 	_test_tweaks_are_physical()
 	_test_writer_round_trips()
 	_test_flat_response_is_detected()
+	_test_render_matches_the_harness()
 
 	print("")
 	if _failures == 0:
@@ -248,6 +249,9 @@ func _test_tweaks_are_physical() -> void:
 	# reports that every mode in the file is voiced when three were dropped.
 	_equal("the loader's warnings travel with the tweak",
 			half.warnings.size(), source.warnings.size())
+	# ...and stay out of the tweak's own list, which is what the simple screen
+	# reads. An untouched object must have nothing to say there.
+	_equal("an untouched tweak raises no tweak warnings", half.tweak_warnings.size(), 0)
 	_equal("an untouched tweak keeps the file's mode count",
 			half.modes_in_file, source.modes_in_file)
 	for i in half.modes.size():
@@ -270,7 +274,7 @@ func _test_tweaks_are_physical() -> void:
 	# the loader would take them — dropped, with a warning, not silently kept.
 	var small := ModelTweak.apply(source, 2.0, 1.0, source.material.contact_time_ref_ms, RATE)
 	_true("shrinking drops modes past the ceiling", small.modes.size() < source.modes.size())
-	_true("and says which", small.warnings.size() > 0)
+	_true("and says so in the tweak's own list", small.tweak_warnings.size() > 0)
 	for mode in small.modes:
 		_true("every surviving mode is voiceable",
 				mode.f <= ModalModel.NYQUIST_FRACTION * RATE)
@@ -337,6 +341,106 @@ func _test_flat_response_is_detected() -> void:
 			SoundWords.velocity_hint(source, normal_low, normal_high,
 					Excitation.clamp_velocity(source.material.contact_time_ref_ms), 10.0)
 				.contains("brighten"))
+
+
+## The audition path, against the engine's own renderer.
+##
+## `tests/golden/ceramic_mug_v2_0.5s.wav` was produced by `modal-render`, which
+## runs the real `bank_process`. If the GDScript port drifts from it, every
+## judgement made by ear in this panel is a judgement about something the
+## runtime will not play — which is worse than being silent.
+##
+## Regenerate with:
+##     modal-render --model models/ceramic_mug.modal --velocity 2.0 \
+##         --seconds 0.5 --out tests/golden/ceramic_mug_v2_0.5s.wav
+func _test_render_matches_the_harness() -> void:
+	var golden_path := ProjectSettings.globalize_path("res://").path_join(
+			"../tests/golden/ceramic_mug_v2_0.5s.wav")
+	if not FileAccess.file_exists(golden_path):
+		_fail("golden WAV not found at %s" % golden_path)
+		return
+	var golden := _read_wav_pcm16(golden_path)
+	_true("the golden WAV has samples", golden.size() > 0)
+	if golden.is_empty():
+		return
+
+	var model := _ceramic()
+	if model == null:
+		return
+	var rendered := ModalVoice.render(model, 2.0, RATE, 0.5)
+	_true("the render produced finite samples", ModalVoice.is_finite(rendered))
+	_equal("the render is the same length as the golden", rendered.size(), golden.size())
+	if rendered.size() != golden.size():
+		return
+
+	# Compared through the same 16-bit quantisation the harness wrote, so the
+	# comparison is of the signal rather than of the file format.
+	var ours := ModalVoice.to_pcm16(rendered)
+	var worst := 0
+	var worst_at := -1
+	for i in golden.size():
+		var mine := ours.decode_s16(i * 2)
+		var difference: int = absi(mine - golden[i])
+		if difference > worst:
+			worst = difference
+			worst_at = i
+	# One LSB of 16-bit is 3e-5 of full scale. The float32 state is reproduced
+	# exactly, so what is left is the order of the summation and the last bit
+	# of the truncation; a handful of LSBs is that, and nothing audible.
+	_true("the render matches the harness within a few LSBs (worst %d at sample %d)" % [
+			worst, worst_at], worst <= 8)
+	print("      render vs modal-render: worst %d LSB of 32767, over %d samples" % [
+			worst, golden.size()])
+
+	# And the thing the whole engine is for: a harder strike must be brighter,
+	# measured on the rendered audio rather than on the model.
+	var soft := ModalVoice.render(model, 0.5, RATE, 0.5)
+	var hard := ModalVoice.render(model, 8.0, RATE, 0.5)
+	var soft_brightness := _zero_crossing_rate(soft)
+	var hard_brightness := _zero_crossing_rate(hard)
+	_true("a harder strike renders brighter audio (%.4f vs %.4f)" % [
+			soft_brightness, hard_brightness], hard_brightness > soft_brightness)
+
+
+## A cheap brightness proxy on rendered audio: how often it crosses zero. Not a
+## spectral centroid, but it needs no transform and moves the same way, which
+## is all this assertion needs.
+func _zero_crossing_rate(samples: PackedFloat32Array) -> float:
+	if samples.size() < 2:
+		return 0.0
+	var crossings := 0
+	for i in range(1, samples.size()):
+		if (samples[i - 1] < 0.0) != (samples[i] < 0.0):
+			crossings += 1
+	return float(crossings) / float(samples.size())
+
+
+## Reads mono 16-bit PCM out of a WAV by walking its chunks. Small and specific
+## to what `harness/src/wav.h` writes.
+func _read_wav_pcm16(path: String) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return out
+	var bytes := file.get_buffer(file.get_length())
+	file.close()
+	if bytes.size() < 44 or bytes.slice(0, 4).get_string_from_ascii() != "RIFF":
+		return out
+
+	var offset := 12
+	while offset + 8 <= bytes.size():
+		var id := bytes.slice(offset, offset + 4).get_string_from_ascii()
+		var size := bytes.decode_u32(offset + 4)
+		var body := offset + 8
+		if id == "data":
+			var count := int(size / 2)
+			out.resize(count)
+			for i in count:
+				out[i] = bytes.decode_s16(body + i * 2)
+			return out
+		# Chunks are word-aligned.
+		offset = body + size + (size & 1)
+	return out
 
 
 # --- fixtures ----------------------------------------------------------------

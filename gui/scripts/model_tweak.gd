@@ -76,7 +76,7 @@ static func apply(source: ModalModel, size: float, ring: float, striker_ms: floa
 		var mode: ModalModel.Mode = source.modes[i]
 		var frequency := mode.f * scale
 		if frequency < ModalModel.MIN_FREQUENCY or frequency > ceiling:
-			out.warnings.append("dropped mode %d at %s Hz: outside %s to %s Hz at this size" % [
+			out.tweak_warnings.append("dropped mode %d at %s Hz: outside %s to %s Hz at this size" % [
 				i, ModalModel._say(frequency), ModalModel._say(ModalModel.MIN_FREQUENCY),
 				ModalModel._say(ceiling)])
 			continue
@@ -88,7 +88,7 @@ static func apply(source: ModalModel, size: float, ring: float, striker_ms: floa
 		out.modes.append(ModalModel.Mode.new(frequency, limited, mode.a))
 
 	if clamped_decay:
-		out.warnings.append("some decay times hit the %s to %s s limit the format allows" % [
+		out.tweak_warnings.append("some decay times hit the %s to %s s limit the format allows" % [
 			ModalModel._say(ModalModel.MIN_TAU), ModalModel._say(ModalModel.MAX_TAU)])
 
 	for position in source.strike_positions:

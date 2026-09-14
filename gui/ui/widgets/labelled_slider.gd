@@ -12,6 +12,10 @@ extends VBoxContainer
 
 signal value_changed(value: float)
 
+## Fired when the fader is let go. Anything expensive — rendering a strike,
+## say — hangs off this rather than off every frame of the drag.
+signal drag_ended
+
 var _title: Label
 var _value: Label
 var _slider: HSlider
@@ -42,6 +46,7 @@ func setup(title: String, low: String, high: String, minimum: float, maximum: fl
 	_slider.mouse_default_cursor_shape = Control.CURSOR_HSIZE
 	_slider.focus_mode = Control.FOCUS_NONE
 	_slider.value_changed.connect(func(v: float) -> void: value_changed.emit(v))
+	_slider.drag_ended.connect(func(_changed: bool) -> void: drag_ended.emit())
 	_style(_slider)
 	add_child(_slider)
 

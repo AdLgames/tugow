@@ -19,9 +19,9 @@ mount as a main-screen tab, so a developer works without leaving the editor.
 Nothing in `ui/` touches an editor API, which is what keeps both working from
 one implementation.
 
-**Silent.** Every plot is computed from the same maths the engine uses, but no
-audio is rendered. Week 3 is where the GDExtension and the voice pool land; the
-panel is deliberately ahead of them.
+**It makes sound.** Every strike is synthesised from the model by the same
+two-pole recursion `bank.cpp` runs — not a recording played back. Press space,
+or the strike button, or move a fader and let go.
 
 ## Run it
 
@@ -61,6 +61,33 @@ and would make the model lie at every velocity but the one it was set at.
 the same thing from the command line, and its output is checked by loading it
 with `modal-render --report` — the loader that actually matters, rather than
 the GDScript port checking its own work.
+
+### Hearing it
+
+`ModalVoice` is a port of `bank.cpp` and the render path in
+`harness/src/main.cpp`: one two-pole resonator per mode, driven by the contact
+pulse, summed and peak-normalised. **The state is float32 on purpose** — `Bank`
+holds `float y1[]`/`y2[]`, and for a long decay `r` sits within a few parts per
+million of 1.0, so it is the float answer the runtime produces. GDScript has
+only doubles, so the state lives in `PackedFloat32Array` where every store
+truncates the same way.
+
+The parity test compares a render against `tests/golden/ceramic_mug_v2_0.5s.wav`,
+written by `modal-render`. Worst case is **1 LSB of 32767 across 24,000
+samples** — the two are the same signal.
+
+A strike costs 67–93 ms to synthesise, which is a hitch you can feel. Repeats
+are cached on everything the audio depends on, so only a change to the object
+or the strike pays it; the panel prints which happened. This is the number that
+decides whether audition stays in GDScript or moves into the GDExtension in
+week 3.
+
+```bash
+godot --headless --path gui --script res://tools/audition_check.gd
+```
+
+times every model at three velocities and drives five strikes through the
+panel, which is the integrated path a screenshot cannot check.
 
 ### The flat-object warning
 
@@ -145,16 +172,18 @@ scripts/
   model_tweak.gd         size, ring and striker as physical transforms; the writer
   sound_words.gd         what a model sounds like, in words, from its numbers
   model_library.gd       where the .modal files are
+  modal_voice.gd         the resonator bank — the actual sound, from bank.cpp
 ui/
   app_shell.gd           the two faces and the tab between them
   sound_panel.gd         Sounds: pick, shape, save
   modal_fit_panel.gd     Analysis: three columns, built in code
-  widgets/               the four plot views, the mode table, the casting
+  widgets/               the plot views, the mode table, the casting, audition
 tests/test_parity.gd     parity with the C++
 tools/
   capture.gd             render a screen to PNG; takes size/ring/striker
   capture_stages.gd      walk all five analysis stages
   write_variant.gd       write a tweaked model, to hand to the C++ loader
+  audition_check.gd      time every model's render and drive the strike path
 ```
 
 ## Capturing

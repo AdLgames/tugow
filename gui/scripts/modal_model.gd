@@ -64,6 +64,15 @@ var ok := false
 var error := ""
 var warnings: PackedStringArray = PackedStringArray()
 
+## Warnings caused by the Sounds screen's controls rather than by the file.
+##
+## Kept apart from `warnings` because the two belong on different screens. A
+## mode the sample rate cannot voice is a property of the file and an Analysis
+## concern; a mode lost because the user shrank the object is a consequence of
+## something they just did, and the simple screen has to say so — in its own
+## language, not the loader's.
+var tweak_warnings: PackedStringArray = PackedStringArray()
+
 ## How many modes the file held before the band filter ran. The difference
 ## between this and `modes.size()` is what the sample rate cost you, and the
 ## panel reports it because it is the single most surprising thing about
