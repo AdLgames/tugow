@@ -1,0 +1,41 @@
+; Modal Fit — the fitting-tool GUI.
+;
+; This project is two shells over one scene. Run it directly and it is a
+; standalone desktop application; enable `addons/modal_fit` in a Godot project
+; that embeds the engine and the same scene becomes a main-screen tab, so a
+; developer fits a mug without leaving the editor.
+
+config_version=5
+
+[application]
+
+config/name="Modal Fit"
+config/description="Fitting station for the Modal procedural contact-audio engine."
+run/main_scene="res://ui/modal_fit_panel.tscn"
+config/features=PackedStringArray("4.2", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[display]
+
+; The design lays out at 1340 px wide with a 22 px gutter either side. Below
+; about 1180 the three columns start to wrap, which the layout handles, but
+; this is the width it was drawn at.
+window/size/viewport_width=1384
+window/size/viewport_height=940
+window/size/initial_position_type=1
+window/stretch/mode="disabled"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/modal_fit/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color="#0d0d0c"
+anti_aliasing/quality/msaa_2d=1
+
+[gui]
+
+theme/default_font_antialiasing=1
+theme/default_font_subpixel_positioning=1

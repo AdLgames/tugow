@@ -1,3 +1,9 @@
 build/
 *.wav
 !tests/golden/*.wav
+
+# Godot's import cache and export artefacts. Regenerated on first open.
+gui/.godot/
+gui/export_presets.cfg
+gui/*.png
+
