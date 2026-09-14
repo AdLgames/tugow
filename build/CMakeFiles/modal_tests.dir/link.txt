@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/modal_tests.dir/tests/main.cpp.o CMakeFiles/modal_tests.dir/tests/test_model.cpp.o CMakeFiles/modal_tests.dir/tests/test_bank.cpp.o CMakeFiles/modal_tests.dir/tests/test_excitation.cpp.o -o modal_tests  libmodal_core.a 

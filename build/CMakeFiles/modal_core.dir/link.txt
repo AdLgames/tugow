@@ -1,2 +1,0 @@
-/usr/bin/ar qc libmodal_core.a CMakeFiles/modal_core.dir/core/src/json.cpp.o CMakeFiles/modal_core.dir/core/src/model.cpp.o CMakeFiles/modal_core.dir/core/src/bank.cpp.o CMakeFiles/modal_core.dir/core/src/excitation.cpp.o
-/usr/bin/ranlib libmodal_core.a

@@ -19,6 +19,17 @@ target_include_directories(modal_core PUBLIC core/include PRIVATE core/src)
 target_compile_options(modal_core PRIVATE
   -O2 -fno-math-errno -ffp-contract=fast -Wall -Wextra)
 
+add_library(modal_fitter
+  fitter/src/fft.cpp
+  fitter/src/fitter.cpp)
+target_include_directories(modal_fitter PUBLIC fitter/src PRIVATE fitter/third_party)
+target_link_libraries(modal_fitter PUBLIC modal_core)
+target_compile_options(modal_fitter PRIVATE -O2 -Wall -Wextra)
+
+add_executable(modal-fit fitter/src/main.cpp)
+target_link_libraries(modal-fit PRIVATE modal_fitter)
+target_compile_options(modal-fit PRIVATE -O2 -Wall -Wextra)
+
 add_executable(modal-render harness/src/main.cpp)
 target_link_libraries(modal-render PRIVATE modal_core)
 target_compile_options(modal-render PRIVATE -O2 -Wall -Wextra)
@@ -29,8 +40,9 @@ if(MODAL_BUILD_TESTS)
     tests/main.cpp
     tests/test_model.cpp
     tests/test_bank.cpp
-    tests/test_excitation.cpp)
-  target_link_libraries(modal_tests PRIVATE modal_core)
+    tests/test_excitation.cpp
+    tests/test_fitter.cpp)
+  target_link_libraries(modal_tests PRIVATE modal_core modal_fitter)
   target_include_directories(modal_tests PRIVATE tests)
   target_compile_options(modal_tests PRIVATE -O2 -Wall -Wextra)
   add_test(NAME modal_tests COMMAND modal_tests)
