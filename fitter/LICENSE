@@ -1,0 +1,12 @@
+The fitter is not covered by the MIT licence at the root of this repository.
+
+All rights reserved. Copyright (c) 2026 AdLgames.
+
+The runtime is free so it can be embedded anywhere; the fitter is what turns
+it into a pipeline, and it is the part that carries a price. Terms are not
+settled yet — this file exists so that nothing here is taken as open source
+by default while that is decided.
+
+Third-party code under fitter/third_party/ keeps its own licence:
+
+  dr_wav — public domain or MIT-0, at your option. See the file itself.
