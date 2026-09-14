@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="14" fill="#232220"/>
+  <rect x="8" y="8" width="112" height="112" rx="9" fill="#0a0d0a" stroke="#3a3833" stroke-width="2"/>
+  <!-- Four modes, each a shorter decay than the one below it. -->
+  <g fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M20 96 C 34 96, 44 62, 108 60" stroke="#e8b23a"/>
+    <path d="M20 96 C 32 96, 40 74, 108 72" stroke="#e8b23a" stroke-opacity=".72"/>
+    <path d="M20 96 C 30 96, 36 83, 108 82" stroke="#e8b23a" stroke-opacity=".46"/>
+    <path d="M20 96 C 28 96, 33 90, 108 90" stroke="#e8b23a" stroke-opacity=".26"/>
+  </g>
+  <line x1="20" y1="24" x2="20" y2="104" stroke="#cfd8bd" stroke-width="2" stroke-opacity=".5"/>
+</svg>
