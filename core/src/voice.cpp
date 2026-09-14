@@ -59,17 +59,18 @@ uint32_t VoicePool::start(const ContactEvent& event) {
     const Model& model = *models_[event.model_id];
 
     // A continuous contact that is already sounding is refreshed rather than
-    // restarted, or a rolling marble would retrigger sixty times a second.
+    // restarted, or a rolling marble would start a voice sixty times a
+    // second and steal one every time the pool filled.
     if (event.voice_hint != 0) {
         for (Voice& voice : voices_) {
-            if (voice.active && voice.id == event.voice_hint) {
+            if (voice.active && voice.tag == event.voice_hint) {
                 if (event.type == ContactType::Release) {
                     voice.continuous = false;
-                    return voice.id;
+                    return voice.tag;
                 }
                 voice.gain = event.normal_force;
                 voice.pan = event.pan;
-                return voice.id;
+                return voice.tag;
             }
         }
     }
@@ -98,8 +99,7 @@ uint32_t VoicePool::start(const ContactEvent& event) {
     bank_set(voice.bank, model, sample_rate_, modes, nullptr);
     voice.decay = bank_slowest_decay(voice.bank);
     voice.model_id = event.model_id;
-    voice.id = next_id_++;
-    if (next_id_ == 0) next_id_ = 1;  // zero means free
+    voice.tag = event.voice_hint;
     voice.started_at = frame_;
     voice.gain = 1.0f;
     voice.pan = event.pan;
@@ -117,7 +117,9 @@ uint32_t VoicePool::start(const ContactEvent& event) {
     // culling. Measuring the output would cost more than it saves.
     voice.energy = static_cast<float>(std::max<double>(event.impulse, 1e-4));
     voice.active = true;
-    return voice.id;
+    // A release for an event that never got a voice must not match the next
+    // voice to be allocated, so a tagless start reports the tag it was given.
+    return event.voice_hint != 0 ? event.voice_hint : 1u;
 }
 
 void VoicePool::mix(float* out, int frames) {

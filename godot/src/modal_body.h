@@ -21,9 +21,12 @@ public:
     ModalBody();
 
     virtual void _ready() override;
+    virtual void _physics_process(double delta) override;
     virtual PackedStringArray _get_configuration_warnings() const override;
 
-    // Called from the parent body's _integrate_forces.
+    // Called once a physics tick by _physics_process, which is why nothing
+    // has to be wired up by hand. Still public, for anyone who would rather
+    // drive it from their own _integrate_forces.
     void read_contacts(PhysicsDirectBodyState3D* state);
 
     void set_model_path(const String& path);
@@ -50,13 +53,17 @@ protected:
 private:
     struct Remembered {
         Vector3 position;
-        uint32_t voice = 0;
+        uint32_t token = 0;  // this body's name for the contact
         bool seen_this_tick = false;
         bool used = false;
     };
 
+    // Tokens are unique across every ModalBody, since the pool is shared.
+    static uint32_t mint_token();
+
     int find_remembered(const Vector3& position);
 
+    RigidBody3D* body_ = nullptr;
     String model_path_;
     int model_id_ = -1;
     float gain_ = 1.0f;

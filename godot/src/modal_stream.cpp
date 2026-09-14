@@ -11,7 +11,7 @@ void ModalAudioStreamPlayback::_start(double) { playing_ = true; }
 void ModalAudioStreamPlayback::_stop() { playing_ = false; }
 bool ModalAudioStreamPlayback::_is_playing() const { return playing_; }
 
-int32_t ModalAudioStreamPlayback::_mix(AudioFrame* buffer, double, int32_t frames) {
+int32_t ModalAudioStreamPlayback::_mix(AudioFrame* buffer, float, int32_t frames) {
     // Real-time thread. No allocation, no locks, no logging, no Godot object
     // creation, and nothing that can throw.
     //

@@ -1,6 +1,7 @@
 #include "modal_body.h"
 
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/physics_server3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -10,6 +11,14 @@ using namespace godot;
 
 ModalBody::ModalBody() {}
 
+uint32_t ModalBody::mint_token() {
+    // Zero means "no contact to refer back to", so it is skipped on wrap.
+    static uint32_t next = 1;
+    const uint32_t token = next++;
+    if (next == 0) next = 1;
+    return token;
+}
+
 void ModalBody::_ready() {
     if (Engine::get_singleton()->is_editor_hint()) return;
     ModalServer* server = ModalServer::get_singleton();
@@ -18,6 +27,8 @@ void ModalBody::_ready() {
     }
     RigidBody3D* body = Object::cast_to<RigidBody3D>(get_parent());
     if (body == nullptr) return;
+    body_ = body;
+    set_physics_process(true);
     // Turning these on silently would hide the mistake rather than fix it,
     // and a contact monitor the user did not ask for costs them performance.
     // The configuration warning says it instead.
@@ -27,6 +38,17 @@ void ModalBody::_ready() {
             " has contact_monitor off or max_contacts_reported at 0, so it will never "
             "report a contact and this body will be silent.");
     }
+}
+
+// Polled rather than hooked. PhysicsServer3D's force-integration callback is
+// the other way in, but RigidBody3D already owns that one and taking it would
+// break the body's own state sync. Reading the direct state once a tick gets
+// the same contacts and leaves the body alone.
+void ModalBody::_physics_process(double) {
+    if (body_ == nullptr || model_id_ < 0) return;
+    PhysicsDirectBodyState3D* state =
+        PhysicsServer3D::get_singleton()->body_get_direct_state(body_->get_rid());
+    if (state != nullptr) read_contacts(state);
 }
 
 PackedStringArray ModalBody::_get_configuration_warnings() const {
@@ -102,21 +124,22 @@ void ModalBody::read_contacts(PhysicsDirectBodyState3D* state) {
         if (known < 0) {
             if (normal_speed < kImpactVelocity) continue;
             event.type = modal::ContactType::Impact;
-            event.voice_hint = 0;
-            // Remembered so next tick knows this contact is not new.
+            // Named now, so when this contact turns into a roll next tick it
+            // carries on in the voice the impact started rather than
+            // beginning a new one sixty times a second.
+            event.voice_hint = mint_token();
             for (int slot = 0; slot < kRemembered; ++slot) {
-                if (remembered_[slot].used && !remembered_[slot].seen_this_tick) continue;
                 if (remembered_[slot].used) continue;
                 remembered_[slot].used = true;
                 remembered_[slot].position = position;
                 remembered_[slot].seen_this_tick = true;
-                remembered_[slot].voice = 0;
+                remembered_[slot].token = event.voice_hint;
                 break;
             }
         } else {
             remembered_[known].seen_this_tick = true;
             remembered_[known].position = position;
-            event.voice_hint = remembered_[known].voice;
+            event.voice_hint = remembered_[known].token;
             if (tangential > kScrapeVelocity) {
                 // Rolling if the body's spin matches the ground speed; the
                 // surface is being read out rather than dragged across.
@@ -137,10 +160,10 @@ void ModalBody::read_contacts(PhysicsDirectBodyState3D* state) {
     // fades instead of hanging.
     for (int i = 0; i < kRemembered; ++i) {
         if (!remembered_[i].used || remembered_[i].seen_this_tick) continue;
-        if (remembered_[i].voice != 0 && count < 32) {
+        if (remembered_[i].token != 0 && count < 32) {
             modal::ContactEvent event;
             event.model_id = static_cast<uint32_t>(model_id_);
-            event.voice_hint = remembered_[i].voice;
+            event.voice_hint = remembered_[i].token;
             event.type = modal::ContactType::Release;
             gathered[count++] = event;
         }

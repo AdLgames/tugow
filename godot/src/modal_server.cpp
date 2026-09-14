@@ -28,6 +28,11 @@ void ModalServer::prepare(double sample_rate) {
 }
 
 int ModalServer::load_model(const String& path) {
+    // Fifty marbles are one model. Without this each body loads its own copy
+    // and the pool holds fifty identical mode tables.
+    const HashMap<String, int>::ConstIterator known = by_path_.find(path);
+    if (known != by_path_.end()) return known->value;
+
     // Read through Godot so res:// and a packed build both work.
     Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
     if (file.is_null()) {
@@ -52,6 +57,7 @@ int ModalServer::load_model(const String& path) {
         return -1;
     }
     models_.push_back(result.model);
+    by_path_[path] = static_cast<int>(models_.size()) - 1;
     model_pointers_.clear();
     for (const modal::Model& model : models_) model_pointers_.push_back(&model);
     pool_.set_models(model_pointers_.data(), static_cast<int>(model_pointers_.size()));
@@ -60,6 +66,7 @@ int ModalServer::load_model(const String& path) {
 
 void ModalServer::unload_models() {
     models_.clear();
+    by_path_.clear();
     model_pointers_.clear();
     pool_.set_models(nullptr, 0);
 }
@@ -79,6 +86,9 @@ void ModalServer::set_lod_distances(float near_metres, float mid_metres, float f
     pool_.lod.mid_metres = mid_metres;
     pool_.lod.far_metres = far_metres;
 }
+
+void ModalServer::set_gain(float gain) { pool_.master_gain = gain; }
+float ModalServer::get_gain() const { return pool_.master_gain; }
 
 int ModalServer::get_active_voices() const { return pool_.active_voices(); }
 int ModalServer::get_dropped_events() const {
@@ -104,6 +114,8 @@ void ModalServer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_voice_limit"), &ModalServer::get_voice_limit);
     ClassDB::bind_method(D_METHOD("set_lod_distances", "near", "mid", "far"),
                          &ModalServer::set_lod_distances);
+    ClassDB::bind_method(D_METHOD("set_gain", "gain"), &ModalServer::set_gain);
+    ClassDB::bind_method(D_METHOD("get_gain"), &ModalServer::get_gain);
     ClassDB::bind_method(D_METHOD("get_active_voices"), &ModalServer::get_active_voices);
     ClassDB::bind_method(D_METHOD("get_dropped_events"), &ModalServer::get_dropped_events);
     ClassDB::bind_method(D_METHOD("get_stolen_voices"), &ModalServer::get_stolen_voices);

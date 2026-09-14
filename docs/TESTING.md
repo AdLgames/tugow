@@ -87,9 +87,11 @@ git clone -b master https://github.com/godotengine/godot-cpp
 
 # Generate the bindings against the exact Godot you will run.
 godot --headless --dump-extension-api          # writes extension_api.json
-cd godot-cpp
-scons target=template_release platform=linux custom_api_file=../extension_api.json -j8
-cd ..
+
+# Both targets. The editor loads the debug one and an exported game loads
+# the release one, so building only release means the editor reports the
+# extension as missing and every class in it as undeclared.
+scons platform=linux target=template_debug   custom_api_file=extension_api.json -j8
 scons platform=linux target=template_release custom_api_file=extension_api.json -j8
 ```
 
@@ -103,10 +105,11 @@ godot --path demo --headless -- --seconds=6   # the same run, no window
 Swap `platform=linux` for `windows` or `macos` as needed. `target=template_debug`
 if you want to attach a debugger.
 
-**If the editor says the extension failed to load**, it is almost always that
-the bindings were generated against a different Godot version than the one
-running. Re-dump `extension_api.json` from the binary you are actually using
-and rebuild both steps.
+**If the editor says the extension failed to load**, it is one of two things.
+Either the file it names is `template_debug` and you only built
+`template_release` — build both. Or the bindings were generated against a
+different Godot than the one running: re-dump `extension_api.json` from the
+binary you are actually using and rebuild.
 
 ## Using it in a scene
 
@@ -116,16 +119,17 @@ Three things, and the third is the one everyone forgets.
 # 1. An AudioStreamPlayer with a ModalAudioStream on it. One per project;
 #    the whole engine mixes through it.
 
-# 2. A ModalBody under each RigidBody3D, with model_path set.
+# 2. A ModalBody under each RigidBody3D, with model_path set. It reads the
+#    contacts itself, every physics tick. Nothing to wire up.
 
 # 3. The body must actually report contacts:
 func _ready() -> void:
     contact_monitor = true
     max_contacts_reported = 8        # zero means no contacts, ever
-
-func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
-    $ModalBody.read_contacts(state)
 ```
+
+`ModalBody.read_contacts(state)` is still public if you would rather drive it
+from your own `_integrate_forces`, but you do not have to.
 
 `max_contacts_reported` defaults to zero, and with it at zero Godot reports
 no contacts at all — the object is simply silent, with no error anywhere.
@@ -140,6 +144,7 @@ ModalServer.get_active_voices()    # how many are sounding now
 ModalServer.get_dropped_events()   # contacts that never got a voice
 ModalServer.get_stolen_voices()    # voices cut short to make room
 ModalServer.set_voice_limit(96)    # 16 to 256, default 64
+ModalServer.set_gain(4.0)          # newton seconds to full scale
 ```
 
 Rising `dropped_events` with `active_voices` pinned at the limit means the

@@ -115,22 +115,23 @@ TEST_CASE("a continuous contact is refreshed, not retriggered") {
     pool.resize(16, kRate);
     pool.set_models(models, 1);
 
+    // The producer names the contact. The queue only goes one way, so the
+    // pool can never hand an id back to the physics thread.
+    const uint32_t token = 4242;
     modal::ContactEvent roll = an_impact();
     roll.type = modal::ContactType::Roll;
     roll.normal_force = 1.0f;
-    const uint32_t id = pool.start(roll);
-    REQUIRE(id != 0);
+    roll.voice_hint = token;
+    REQUIRE(pool.start(roll) == token);
 
     for (int i = 0; i < 60; ++i) {
-        roll.voice_hint = id;
-        CHECK(pool.start(roll) == id);
+        CHECK(pool.start(roll) == token);
     }
     CHECK(pool.active_voices() == 1);
 
     // And a release lets it fade instead of cutting it.
     roll.type = modal::ContactType::Release;
-    roll.voice_hint = id;
-    CHECK(pool.start(roll) == id);
+    CHECK(pool.start(roll) == token);
     std::vector<float> block(2048, 0.0f);
     for (int i = 0; i < 200; ++i) pool.mix(block.data(), 2048);
     CHECK(pool.active_voices() == 0);

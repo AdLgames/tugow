@@ -17,7 +17,10 @@ public:
     virtual void _start(double from_pos) override;
     virtual void _stop() override;
     virtual bool _is_playing() const override;
-    virtual int32_t _mix(AudioFrame* buffer, double rate_scale, int32_t frames) override;
+    // float, not the double the build plan has: godot-cpp declares
+    // _mix(AudioFrame*, float, int32_t), and a double here silently fails
+    // to override, leaving the base class returning silence.
+    virtual int32_t _mix(AudioFrame* buffer, float rate_scale, int32_t frames) override;
 
 protected:
     static void _bind_methods() {}

@@ -45,7 +45,8 @@ if(MODAL_BUILD_TESTS)
     tests/test_excitation.cpp
     tests/test_fitter.cpp
     tests/test_queue.cpp
-    tests/test_voice.cpp)
+    tests/test_voice.cpp
+    tests/test_realtime.cpp)
   target_link_libraries(modal_tests PRIVATE modal_core modal_fitter)
   target_include_directories(modal_tests PRIVATE tests)
   target_compile_options(modal_tests PRIVATE -O2 -Wall -Wextra)

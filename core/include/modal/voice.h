@@ -31,7 +31,12 @@ struct Voice {
     Pulse pulse;
     int pulse_frame = 0;
     uint32_t model_id = 0;
-    uint32_t id = 0;  // 0 means free; also what a voice_hint refers to
+    // The producer's name for the contact this voice is serving, or 0 for a
+    // one-shot impact that nothing will refer to again. It cannot be the
+    // pool's own counter: the queue only goes one way, so the physics thread
+    // could never be told which voice it got, and every tick of a rolling
+    // contact would start another voice.
+    uint32_t tag = 0;
     uint64_t started_at = 0;
     float energy = 0.0f;   // upper bound on what is left, not a measurement
     float decay = 0.0f;    // per-sample multiplier of the slowest mode
@@ -83,7 +88,13 @@ public:
     const std::vector<Voice>& voices() const { return voices_; }
 
     LodSettings lod;
-    float master_gain = 0.35f;
+
+    // The one constant nothing physical decides. Impulse arrives in newton
+    // seconds and output leaves in full-scale units, and the ratio between
+    // them is a mixing choice: at 4.0 a small object dropped a metre or two
+    // lands around -12 dBFS, which leaves room for a pile of them. The soft
+    // clip catches the rest.
+    float master_gain = 4.0f;
 
 private:
     int find_free() const;
@@ -95,7 +106,6 @@ private:
     std::vector<float> voice_out_;   // scratch, sized once
     double sample_rate_ = 48000.0;
     uint64_t frame_ = 0;
-    uint32_t next_id_ = 1;
     int dropped_ = 0;
     int stolen_ = 0;
     int nan_resets_ = 0;

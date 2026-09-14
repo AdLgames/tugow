@@ -3,10 +3,13 @@
 Procedural physics-driven audio. Impact sounds generated from the physics
 state of a collision rather than picked from a library of samples.
 
-The full plan is `docs/BUILD_PLAN.md`. **Weeks 1 and 2 are done**: the DSP
-core, the offline renderer, and the fitter. No Godot yet, deliberately — the
-two gates before it exist to kill the project cheaply if either fails, and
-neither needs an engine to answer.
+The full plan is `docs/BUILD_PLAN.md`. **Weeks 1 to 3 are done**: the DSP core, the offline
+renderer, the fitter, and the Godot extension. Fifty objects drop in a real
+Godot scene and make a sound.
+
+`docs/TESTING.md` says how to run any of it, and what cannot be run from a
+tablet — which is most of it, since a GDExtension is a compiled library and
+the Android editor has no compiler in it.
 
 ## Build and run
 
@@ -177,6 +180,35 @@ signal. It now refuses, which is the honest answer. Locked down as a test.
 
 Worth noting for §8: the 1% merge tolerance is **narrower than the window can
 resolve** below about 5 kHz, so merging only ever fires above that.
+
+### The queue cannot drop its own quietest event
+
+Section 2.2 asks the ring to drop the quietest pending event on overflow
+rather than the newest. It cannot: an entry already in the ring may be being
+read by the audio thread at that instant, and reaching back into it from the
+producer is the single race the structure exists to prevent. A lock-free ring
+can refuse a write; it cannot reach back into itself.
+
+The intent is right and belongs one step earlier. The producer already has to
+cap its output per tick, so it sorts what it has by impulse and pushes the
+loudest — same outcome, decided on the only side that can safely decide it.
+
+### Two signatures in the plan are wrong
+
+`sizeof(ContactEvent)` is **40**, not the 48 section 2.2 asserts. Two uint32,
+seven float, one uint8 and three bytes of padding, with no trailing padding
+at four-byte alignment; 48 was never reachable without padding put there on
+purpose, and nothing wants it.
+
+`_mix` takes a **float** rate scale, not a double. Section 6.2 has it as
+`double`, and with a double the method silently fails to override — it
+compiles as a new overload, the base class keeps returning silence, and
+nothing anywhere says so. Caught by `-Woverloaded-virtual` only because the
+`override` keyword was on it.
+
+`rate_scale` is then ignored deliberately: it is the host asking for pitch
+shifting by resampling, and a modal voice is pitched by its coefficients.
+Obeying it would detune every object in the scene.
 
 ### The spectral distance metric needed a floor
 

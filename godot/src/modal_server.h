@@ -6,6 +6,7 @@
 #pragma once
 
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 #include "modal/queue.h"
@@ -31,6 +32,8 @@ public:
     void set_voice_limit(int voices);
     int get_voice_limit() const;
     void set_lod_distances(float near_metres, float mid_metres, float far_metres);
+    void set_gain(float gain);
+    float get_gain() const;
 
     int get_active_voices() const;
     int get_dropped_events() const;
@@ -57,6 +60,9 @@ private:
     modal::ContactQueue<1024> queue_;
     modal::VoicePool pool_;
     std::vector<modal::Model> models_;
+    // Path to id, so fifty objects of the same kind are one model and not
+    // fifty copies of it.
+    HashMap<String, int> by_path_;
     std::vector<const modal::Model*> model_pointers_;
     int voice_limit_ = modal::kDefaultVoices;
     double sample_rate_ = 48000.0;
