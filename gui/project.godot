@@ -11,7 +11,7 @@ config_version=5
 
 config/name="Modal Fit"
 config/description="Fitting station for the Modal procedural contact-audio engine."
-run/main_scene="res://ui/modal_fit_panel.tscn"
+run/main_scene="res://ui/app_shell.tscn"
 config/features=PackedStringArray("4.2", "GL Compatibility")
 config/icon="res://icon.svg"
 

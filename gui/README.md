@@ -1,13 +1,23 @@
 # Modal Fit
 
-The fitting-tool GUI: a late-90s pro-audio front panel for inspecting a
-`.modal` model and the excitation that drives it.
+A late-90s pro-audio front panel for the Modal engine, with two faces.
 
-It is one scene in two shells. Run the Godot project directly and it is a
-standalone desktop application; enable `addons/modal_fit` in a Godot project
-and the same panel mounts as a main-screen tab, so a developer inspects a model
-without leaving the editor. Nothing in `ui/` touches an editor API, which is
-what keeps both shells working from one implementation.
+**Sounds** is the front of the machine, and what opens: pick an object, shape
+it, save it. Most of the time the question is "what does a crate sound like",
+not "what is the R² of mode 7".
+
+**Analysis** is the service panel underneath — the five fit stages, the mode
+table, every threshold. It is what proves the engine does what it claims; it
+just is not where anyone starts.
+
+One `FitState` between them, so a size change made on the front panel is what
+the spectrogram redraws.
+
+It is also one scene in two shells. Run the Godot project directly and it is a
+standalone desktop application; enable `addons/modal_fit` and the same screens
+mount as a main-screen tab, so a developer works without leaving the editor.
+Nothing in `ui/` touches an editor API, which is what keeps both working from
+one implementation.
 
 **Silent.** Every plot is computed from the same maths the engine uses, but no
 audio is rendered. Week 3 is where the GDExtension and the voice pool land; the
@@ -23,23 +33,56 @@ godot --path gui --headless --script res://tests/test_parity.gd   # tests
 ```
 
 Models are found automatically: `../models` relative to the project when
-running from the repository, or `models/` beside the binary when exported.
-**Open .modal** loads one from anywhere.
+running from the repository, `models/` beside the binary when exported, and
+`user://sounds` for variants you save. **Open a .modal file** loads one from
+anywhere.
 
-## What actually works
+## Sounds
 
-Four controls, all of them driving the same recomputation:
+Three controls shape the object, one says how hard you hit it, and that split
+is the point rather than a tidying. Size, ring and striker are properties of
+the thing and are saved into the `.modal`; hit strength is a performance
+parameter the physics engine supplies per collision and is never saved.
+
+| Control | What it really is |
+|---|---|
+| **Size** | Scales every frequency. Geometric scaling — a mug twice as big rings an octave lower. The *ratios* between modes are untouched, which is why it still sounds ceramic. |
+| **Ring** | Scales every decay time. The material's internal damping. |
+| **Striker** | `material.contact_time_ref_ms` — what you hit it *with*. A pen cap is a short contact and a wide excitation; a rubber mallet is a long one. |
+| **How hard you hit it** | Impact velocity. Not saved. |
+
+There is deliberately **no brightness knob**. Brightness is what the engine is
+supposed to produce rather than be told — it falls out of contact time, which
+is striker and velocity. A control that reached in and lifted the high modes
+directly would be the sample-based approximation this project exists to avoid,
+and would make the model lie at every velocity but the one it was set at.
+
+**Save as a new sound** writes a real `.modal`. `tools/write_variant.gd` does
+the same thing from the command line, and its output is checked by loading it
+with `modal-render --report` — the loader that actually matters, rather than
+the GDScript port checking its own work.
+
+### The flat-object warning
+
+A striker hard enough to pin contact time at its 0.05 ms floor produces an
+object that only ever gets *louder*. That is the exact failure the engine
+exists to prevent — six clips of glass at different volumes — and it is two
+fader-widths away on the simple screen. So the panel measures the spectral
+centroid at both ends of the hit fader and, when the object has stopped
+responding, says so in red with the velocity it gave up at.
+
+## Analysis
 
 - **Impact velocity** recomputes the fractional Hann contact pulse, evaluates
   each mode's excitation gain from the pulse's transform, and updates every
-  plot and readout. You can watch the object get brighter.
+  plot and readout.
 - **Stage stepper** — onset, peak picking, tracking, decay fit, verify. Five
-  views of one model, all of them downstream of the velocity slider.
+  views of one model, all downstream of the velocity slider.
 - **Mode table** — click a row to solo it; every plot follows. With eleven
   overlapping decay curves this is the only way to see which is which.
-- **Host rate** reloads the model at 44.1, 48 or 96 kHz, because which modes
-  survive is decided at load and the panel should show that rather than let a
-  developer discover it in the game.
+- **Host rate** reloads at 44.1, 48 or 96 kHz, because which modes survive is
+  decided at load and the panel should show that rather than let a developer
+  discover it in the game.
 
 The **strike map** is inert for now, and says so: the format reserves
 `strike_positions` and `model.cpp` validates them, but no model in `models/`
@@ -99,19 +142,31 @@ scripts/
   fit_state.gd           what the panel is showing, and the only place it is computed
   theme.gd               the palette and the panel chrome
   draw_util.gd           rounded gradients, inset shadows, letterspacing
+  model_tweak.gd         size, ring and striker as physical transforms; the writer
+  sound_words.gd         what a model sounds like, in words, from its numbers
+  model_library.gd       where the .modal files are
 ui/
-  modal_fit_panel.gd     the screen: three columns, built in code
+  app_shell.gd           the two faces and the tab between them
+  sound_panel.gd         Sounds: pick, shape, save
+  modal_fit_panel.gd     Analysis: three columns, built in code
   widgets/               the four plot views, the mode table, the casting
 tests/test_parity.gd     parity with the C++
-tools/capture*.gd        render to PNG, for design review and CI
+tools/
+  capture.gd             render a screen to PNG; takes size/ring/striker
+  capture_stages.gd      walk all five analysis stages
+  write_variant.gd       write a tweaked model, to hand to the C++ loader
 ```
 
 ## Capturing
 
 ```bash
 xvfb-run -a godot --path gui --script res://tools/capture.gd -- panel.png
+xvfb-run -a godot --path gui --script res://tools/capture.gd -- t.png 0.55 0.4 0.05
 xvfb-run -a godot --path gui --script res://tools/capture_stages.gd -- stage
 ```
+
+The second captures a tweaked object, which is how the flat-object warning gets
+looked at. The third walks all five analysis stages at two velocities.
 
 The second walks all five stages at two velocities. Headless runs never call
 `_draw`, and nearly all of this panel is `_draw`, so a capture is the only

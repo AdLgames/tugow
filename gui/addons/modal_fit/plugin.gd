@@ -8,7 +8,7 @@ extends EditorPlugin
 ## API is what makes that possible, so nothing below leaks `EditorInterface`
 ## into the panel itself.
 
-const PANEL := preload("res://ui/modal_fit_panel.tscn")
+const PANEL := preload("res://ui/app_shell.tscn")
 
 var _panel: Control
 

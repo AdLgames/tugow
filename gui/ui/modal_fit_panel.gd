@@ -15,7 +15,7 @@ extends Control
 
 const COLUMN_GAP := 14
 
-var state := FitState.new()
+var state: FitState = FitState.new()
 
 var _stage_buttons: Array[Button] = []
 var _mode_table: ModeTable
@@ -35,17 +35,12 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_build()
 	state.changed.connect(_refresh)
-	_discover_models()
 	_refresh()
 
 
 # --- construction ------------------------------------------------------------
 
 func _build() -> void:
-	var backdrop := Backdrop.new()
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(backdrop)
-
 	var scroll := ScrollContainer.new()
 	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -55,7 +50,7 @@ func _build() -> void:
 	gutter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	gutter.add_theme_constant_override(&"margin_left", 22)
 	gutter.add_theme_constant_override(&"margin_right", 22)
-	gutter.add_theme_constant_override(&"margin_top", 28)
+	gutter.add_theme_constant_override(&"margin_top", 4)
 	gutter.add_theme_constant_override(&"margin_bottom", 40)
 	scroll.add_child(gutter)
 
@@ -85,30 +80,16 @@ func _build() -> void:
 	page.add_child(_build_footer())
 
 
+## Only the analysis settings. The wordmark lives in the shell, which is
+## shared with the Sounds screen.
 func _build_header() -> Control:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override(&"separation", 20)
-
-	var left := VBoxContainer.new()
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override(&"separation", 8)
-	left.add_child(_tracked_label("PROCEDURAL CONTACT AUDIO · FITTING STATION", 9,
-			ModalTheme.LABEL, 3.2, ModalTheme.sans()))
-
-	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override(&"separation", 12)
-	title_row.alignment = BoxContainer.ALIGNMENT_BEGIN
-	title_row.add_child(_tracked_label("MODAL FIT", 25, ModalTheme.TEXT, 4.0,
-			ModalTheme.mono_bold()))
-	var unit := _tracked_label("MF·1000", 10, ModalTheme.MUTED, 2.0, ModalTheme.mono())
-	unit.size_flags_vertical = Control.SIZE_SHRINK_END
-	title_row.add_child(unit)
-	left.add_child(title_row)
-	row.add_child(left)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(spacer)
 
 	var right := VBoxContainer.new()
 	right.alignment = BoxContainer.ALIGNMENT_END
-	right.size_flags_vertical = Control.SIZE_SHRINK_END
 	for line in [
 		"WAV IN  ·  .MODAL OUT",
 		"ANALYSIS %d / HOP %d / PAD %d×" % [FitState.WINDOW, FitState.HOP, FitState.ZERO_PAD],
@@ -519,41 +500,26 @@ func _build_footer() -> Control:
 
 # --- model discovery ---------------------------------------------------------
 
-## Where a `models/` directory might be. Running from source it is beside the
-## Godot project inside the repository; exported it sits next to the binary.
-func _model_directories() -> PackedStringArray:
-	var project := ProjectSettings.globalize_path("res://")
-	return PackedStringArray([
-		project.path_join("../models"),
-		project.path_join("models"),
-		OS.get_executable_path().get_base_dir().path_join("models"),
-	])
-
-
-func _discover_models() -> void:
+## The shell finds the sounds and hands the same list to both screens.
+func set_library(paths: PackedStringArray) -> void:
 	_model_menu.clear()
-	var seen := {}
-	for directory in _model_directories():
-		# Probing a path that is not there is expected — only one of the
-		# candidates exists in any given layout — so it must not be an error.
-		if not DirAccess.dir_exists_absolute(directory):
-			continue
-		for file in DirAccess.get_files_at(directory):
-			if not file.ends_with(".modal"):
-				continue
-			var full := directory.path_join(file)
-			if seen.has(file):
-				continue
-			seen[file] = full
-			_model_menu.add_item(file.get_basename())
-			_model_menu.set_item_metadata(_model_menu.item_count - 1, full)
-
+	for path in paths:
+		_model_menu.add_item(path.get_file().get_basename())
+		_model_menu.set_item_metadata(_model_menu.item_count - 1, path)
 	if _model_menu.item_count == 0:
 		_model_menu.add_item("no models found")
 		_model_menu.set_item_disabled(0, true)
 		return
-	_model_menu.select(0)
-	_on_model_selected(0)
+	_select_current()
+
+
+## Points the picker at whatever the shared state has open, without reloading
+## it — the other screen may have been the one that changed it.
+func _select_current() -> void:
+	for i in _model_menu.item_count:
+		if _model_menu.get_item_metadata(i) == state.model_path:
+			_model_menu.select(i)
+			return
 
 
 func _on_model_selected(index: int) -> void:
@@ -610,6 +576,8 @@ func _refresh() -> void:
 
 	_solo_button.text = "ALL MODES" if state.solo < 0 else "SOLO %d · CLEAR" % state.solo
 	_style_solo_button(_solo_button, state.solo >= 0)
+
+	_select_current()
 
 	var loaded := state.is_loaded()
 	_readouts["path"].text = state.model_path.get_file() if not state.model_path.is_empty() else "—"

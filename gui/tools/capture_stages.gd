@@ -21,20 +21,24 @@ func _init() -> void:
 
 	var window := get_root()
 	window.size = Vector2i(WIDTH, HEIGHT)
-	var scene: PackedScene = load("res://ui/modal_fit_panel.tscn")
-	var panel: ModalFitPanel = scene.instantiate()
-	window.add_child(panel)
+	var scene: PackedScene = load("res://ui/app_shell.tscn")
+	var shell: AppShell = scene.instantiate()
+	window.add_child(shell)
 
 	for frame in SETTLE_FRAMES:
 		await process_frame
 
+	# The shell opens on Sounds; the stages live on the other screen.
+	shell._show(AppShell.Screen.ANALYSIS)
+	var panel := shell.state
+
 	var failures := 0
 	for stage in FitState.Stage.values():
-		panel.state.set_stage(stage)
+		panel.set_stage(stage)
 		# Two velocities per stage: the contact pulse drives every view, so a
 		# view that ignores it is a view that is drawing something stale.
 		for velocity in [0.8, 9.0]:
-			panel.state.set_velocity(velocity)
+			panel.set_velocity(velocity)
 			for frame in 3:
 				await process_frame
 			await RenderingServer.frame_post_draw

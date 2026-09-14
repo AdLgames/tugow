@@ -125,9 +125,13 @@ static func mode_amplitudes(model: ModalModel, velocity: float, gains: PackedFlo
 ## the steel figure, which is the one a developer meets in practice — but it is
 ## a property of the material, not of the engine, so the panel derives it from
 ## whichever model is loaded rather than printing a constant.
+## A striker at or below the 0.05 ms floor gives an answer at or below 1 m/s,
+## which is correct and worth returning rather than guarding away: it means the
+## object is clamped across the whole range anything in a game will hit it at,
+## and the panel needs to be able to say so.
 static func clamp_velocity(contact_time_ref_ms: float) -> float:
 	var reference := contact_time_ref_ms * 1e-3
-	if reference <= MIN_CONTACT_SECONDS:
+	if reference <= 0.0:
 		return 0.0
 	return pow(reference / MIN_CONTACT_SECONDS, 5.0)
 

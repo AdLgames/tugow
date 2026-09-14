@@ -60,6 +60,9 @@ func _init() -> void:
 	_test_ceramic_load()
 	_test_strike_gain_fallback()
 	_test_every_shipped_model_loads()
+	_test_tweaks_are_physical()
+	_test_writer_round_trips()
+	_test_flat_response_is_detected()
 
 	print("")
 	if _failures == 0:
@@ -227,6 +230,113 @@ func _test_every_shipped_model_loads() -> void:
 			# panel prints it as a claim about the material.
 			_true("%s has a positive clamp velocity" % file,
 					Excitation.clamp_velocity(model.material.contact_time_ref_ms) > 0.0)
+
+
+## The Sounds screen's three controls, checked as transforms rather than as
+## effects: size must move every frequency by the same ratio and leave the
+## relative spacing alone, because that spacing is what makes the object sound
+## like its material. A size control that changed the ratios would be changing
+## what the object is made of.
+func _test_tweaks_are_physical() -> void:
+	var source := _ceramic()
+	if source == null:
+		return
+
+	var half := ModelTweak.apply(source, 0.5, 1.0, source.material.contact_time_ref_ms, RATE)
+	_true("halving size keeps every mode", half.modes.size() == source.modes.size())
+	# The loader's warnings have to survive the tweak, or an untouched object
+	# reports that every mode in the file is voiced when three were dropped.
+	_equal("the loader's warnings travel with the tweak",
+			half.warnings.size(), source.warnings.size())
+	_equal("an untouched tweak keeps the file's mode count",
+			half.modes_in_file, source.modes_in_file)
+	for i in half.modes.size():
+		_close("mode %d is an octave down" % i, half.modes[i].f, source.modes[i].f * 0.5, 1e-9)
+		_close("mode %d keeps its decay" % i, half.modes[i].tau, source.modes[i].tau, 1e-9)
+		_close("mode %d keeps its amplitude" % i, half.modes[i].a, source.modes[i].a, 1e-12)
+
+	# Ratios between modes are the material's fingerprint and must survive.
+	for i in range(1, half.modes.size()):
+		_close("mode %d keeps its ratio to mode 0" % i,
+				half.modes[i].f / half.modes[0].f,
+				source.modes[i].f / source.modes[0].f, 1e-9)
+
+	var damped := ModelTweak.apply(source, 1.0, 0.5, source.material.contact_time_ref_ms, RATE)
+	for i in damped.modes.size():
+		_close("mode %d decays half as long" % i, damped.modes[i].tau, source.modes[i].tau * 0.5, 1e-9)
+		_close("mode %d keeps its frequency" % i, damped.modes[i].f, source.modes[i].f, 1e-9)
+
+	# Shrinking pushes modes off the top of the band, and they must go the way
+	# the loader would take them — dropped, with a warning, not silently kept.
+	var small := ModelTweak.apply(source, 2.0, 1.0, source.material.contact_time_ref_ms, RATE)
+	_true("shrinking drops modes past the ceiling", small.modes.size() < source.modes.size())
+	_true("and says which", small.warnings.size() > 0)
+	for mode in small.modes:
+		_true("every surviving mode is voiceable",
+				mode.f <= ModalModel.NYQUIST_FRACTION * RATE)
+
+	# Decay must never leave the range the format accepts, or the file the user
+	# saves will not open — an error, not a warning, in model.cpp.
+	var stretched := ModelTweak.apply(source, 1.0, ModelTweak.RING_MAX, 1.0, RATE)
+	for mode in stretched.modes:
+		_true("stretched decay stays inside the format's range",
+				mode.tau >= ModalModel.MIN_TAU and mode.tau <= ModalModel.MAX_TAU)
+
+
+## Anything the Sounds screen writes has to come back in. This checks the
+## GDScript half; `tools/write_variant.gd` hands the same file to the C++
+## loader, which is the half that actually matters.
+func _test_writer_round_trips() -> void:
+	var source := _ceramic()
+	if source == null:
+		return
+	var tweaked := ModelTweak.apply(source, 0.5, 0.35, 0.05, RATE)
+	var text := ModelTweak.to_json(tweaked, "round_trip", "test")
+	var reloaded := ModalModel.load_from_string(text, RATE)
+
+	_true("a written model loads again", reloaded.ok)
+	if not reloaded.ok:
+		printerr("      " + reloaded.error)
+		return
+	_equal("round trip keeps every mode", reloaded.modes.size(), tweaked.modes.size())
+	for i in reloaded.modes.size():
+		_close("round trip keeps mode %d frequency" % i, reloaded.modes[i].f, tweaked.modes[i].f, 1e-3)
+		_close("round trip keeps mode %d decay" % i, reloaded.modes[i].tau, tweaked.modes[i].tau, 1e-5)
+	_close("round trip keeps the striker", reloaded.material.contact_time_ref_ms,
+			tweaked.material.contact_time_ref_ms, 1e-4)
+
+
+## The trap the Sounds screen has to warn about.
+##
+## A striker hard enough to pin contact time at its floor makes an object that
+## only gets louder — six clips of glass at different volumes, which is the
+## failure the engine exists to prevent. It is two fader-widths away on the
+## simple screen, so the detection that catches it is worth a test.
+func _test_flat_response_is_detected() -> void:
+	var source := _ceramic()
+	if source == null:
+		return
+	var gains := source.gains_at(-1)
+
+	var measure := func(model: ModalModel, velocity: float) -> float:
+		return Excitation.spectral_centroid(model,
+				Excitation.mode_amplitudes(model, velocity, model.gains_at(-1), RATE))
+
+	# A hard striker: contact time is already clamped at walking pace.
+	var hard := ModelTweak.apply(source, 1.0, 1.0, 0.05, RATE)
+	_close("a 0.05 ms striker clamps at 1 m/s", Excitation.clamp_velocity(0.05), 1.0, 1e-9)
+	var hard_low: float = measure.call(hard, 2.0)
+	var hard_high: float = measure.call(hard, 10.0)
+	_true("a hard striker is detected as flat", SoundWords.is_flat(hard_low, hard_high))
+
+	# The preset's own striker, which should still respond across the fader.
+	var normal_low: float = measure.call(source, 0.5)
+	var normal_high: float = measure.call(source, 10.0)
+	_true("the ceramic preset is not flat", not SoundWords.is_flat(normal_low, normal_high))
+	_true("and the hint says so",
+			SoundWords.velocity_hint(source, normal_low, normal_high,
+					Excitation.clamp_velocity(source.material.contact_time_ref_ms), 10.0)
+				.contains("brighten"))
 
 
 # --- fixtures ----------------------------------------------------------------

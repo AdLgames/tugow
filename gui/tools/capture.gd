@@ -29,16 +29,32 @@ func _init() -> void:
 	window.size = Vector2i(WIDTH, HEIGHT)
 	window.transparent_bg = false
 
-	var scene: PackedScene = load("res://ui/modal_fit_panel.tscn")
+	var scene: PackedScene = load("res://ui/app_shell.tscn")
 	if scene == null:
 		printerr("could not load the panel scene")
 		quit(1)
 		return
-	window.add_child(scene.instantiate())
+	var shell: AppShell = scene.instantiate()
+	window.add_child(shell)
 
 	# Fonts resolve asynchronously and the layout settles over a frame or two;
 	# capturing immediately catches the panel mid-arrangement.
+	#
+	# The tweak has to wait for this too. `_ready` on a node added from a
+	# SceneTree script's `_init` is deferred to the first frame, and the shell
+	# loads its first model in it — which resets the tweak. Setting it before
+	# the settle silently does nothing at all.
 	for frame in SETTLE_FRAMES:
+		await process_frame
+
+	# Optional: size, ring and striker, so a capture can show a tweaked object
+	# and the warnings a tweak can raise — not just the untouched preset.
+	if arguments.size() >= 4:
+		shell.state.set_tweak(float(arguments[1]), float(arguments[2]), float(arguments[3]))
+	if arguments.size() >= 5:
+		shell._show(AppShell.Screen.ANALYSIS if arguments[4] == "analysis"
+				else AppShell.Screen.SOUNDS)
+	for frame in 4:
 		await process_frame
 	await RenderingServer.frame_post_draw
 

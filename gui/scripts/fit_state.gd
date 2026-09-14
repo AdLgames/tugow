@@ -62,9 +62,19 @@ static func stage_note(stage: Stage) -> String:
 		_:
 			return "resynthesis from the loaded model"
 
+## The preset as it came off disk, and the object after the Sounds screen's
+## controls have been applied to it. Every plot reads `model`, so a tweak made
+## on the simple screen is what the analysis screen inspects — the two screens
+## are two views of one object, not two objects.
+var preset: ModalModel
 var model: ModalModel
 var model_path := ""
 var sample_rate := 48000.0
+
+## The Sounds screen's three controls. Defaults are "untouched".
+var size_factor := 1.0
+var ring_factor := 1.0
+var striker_ms := 0.15
 
 var velocity := 2.0
 var stage: Stage = Stage.TRACKING
@@ -81,15 +91,60 @@ var pulse: Excitation.Pulse
 
 func load_model(path: String) -> bool:
 	var loaded := ModalModel.load_from_file(path, sample_rate)
-	model = loaded
+	preset = loaded
 	model_path = path
+	# Loading a preset resets the controls. Carrying a previous object's size
+	# and ring onto a new one would mean the preset you picked is not the
+	# preset you hear.
+	size_factor = 1.0
+	ring_factor = 1.0
+	striker_ms = loaded.material.contact_time_ref_ms if loaded.ok else 0.15
 	# A model's own strike positions are the only ones there are; with none in
 	# the file the map has nothing to select.
 	strike = 0 if loaded.has_strike_data() else -1
 	solo = -1
-	_recompute()
+	_retweak()
 	changed.emit()
 	return loaded.ok
+
+
+## Whether the object has been moved away from the preset it came from.
+func is_tweaked() -> bool:
+	return not (is_equal_approx(size_factor, 1.0) and is_equal_approx(ring_factor, 1.0)
+			and is_equal_approx(striker_ms, preset.material.contact_time_ref_ms)) \
+			if preset != null and preset.ok else false
+
+
+func set_tweak(size: float, ring: float, striker: float) -> void:
+	if is_equal_approx(size, size_factor) and is_equal_approx(ring, ring_factor) \
+			and is_equal_approx(striker, striker_ms):
+		return
+	size_factor = size
+	ring_factor = ring
+	striker_ms = striker
+	_retweak()
+	changed.emit()
+
+
+func reset_tweak() -> void:
+	if preset == null or not preset.ok:
+		return
+	set_tweak(1.0, 1.0, preset.material.contact_time_ref_ms)
+
+
+## Rebuilds the tweaked model from the preset. Cheap enough to do on every
+## slider frame — a few dozen modes and no allocation that matters.
+func _retweak() -> void:
+	if preset == null or not preset.ok:
+		model = preset
+		_recompute()
+		return
+	model = ModelTweak.apply(preset, size_factor, ring_factor, striker_ms, sample_rate)
+	# A solo index into the preset can point past the end once a tweak has
+	# dropped modes off the top.
+	if solo >= model.modes.size():
+		solo = -1
+	_recompute()
 
 
 func set_sample_rate(rate: float) -> void:
@@ -97,12 +152,13 @@ func set_sample_rate(rate: float) -> void:
 		return
 	sample_rate = rate
 	# Reloading is not optional: which modes survive is decided at load, so a
-	# rate change has to go back through the loader to be honest about it.
+	# rate change has to go back through the loader to be honest about it. The
+	# tweak is deliberately kept — a host running at 44.1 is not a reason to
+	# throw away the object the user built.
 	if not model_path.is_empty():
-		load_model(model_path)
-	else:
-		_recompute()
-		changed.emit()
+		preset = ModalModel.load_from_file(model_path, sample_rate)
+	_retweak()
+	changed.emit()
 
 
 func set_velocity(value: float) -> void:
@@ -233,3 +289,14 @@ func display_seconds() -> float:
 ## The time axis label for `display_seconds`, so the plots agree with it.
 func duration_label() -> String:
 	return "%.1f s" % display_seconds()
+
+
+## Spectral centroid at an arbitrary velocity, without disturbing the cached
+## state. Used to answer "will hitting this harder actually do anything", which
+## the Sounds screen says in words.
+func centroid_at(at_velocity: float) -> float:
+	if not is_loaded():
+		return 0.0
+	var gains := model.gains_at(strike)
+	return Excitation.spectral_centroid(model,
+			Excitation.mode_amplitudes(model, at_velocity, gains, sample_rate))
