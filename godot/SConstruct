@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+# Builds the GDExtension. The engine itself lives in ../core and is compiled
+# in here rather than linked, so there is one set of flags and no chance of
+# the extension and the tests disagreeing about how the DSP was built.
+#
+#   scons platform=linux target=template_release -j8
+#
+# The API this is generated against comes from extension_api.json, dumped
+# from the Godot binary you intend to run:
+#
+#   godot --headless --dump-extension-api
+
+import os
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/", "../core/include/", "../core/src/"])
+
+sources = Glob("src/*.cpp") + Glob("../core/src/*.cpp")
+
+# -ffast-math is deliberately absent: it implies -ffinite-math-only, which
+# lets the compiler assume no value is ever NaN and delete the guard that
+# stops one bad coefficient poisoning the mix for the session.
+if env["platform"] != "windows":
+    env.Append(CXXFLAGS=["-fno-math-errno", "-ffp-contract=fast"])
+
+suffix = env["suffix"]
+shlib = env["SHLIBSUFFIX"]
+
+if env["platform"] == "macos":
+    target = "demo/addons/modal/bin/libmodal.{}.{}.framework/libmodal.{}.{}".format(
+        env["platform"], env["target"], env["platform"], env["target"]
+    )
+else:
+    target = "demo/addons/modal/bin/libmodal{}{}".format(suffix, shlib)
+
+library = env.SharedLibrary(target=target, source=sources)
+Default(library)

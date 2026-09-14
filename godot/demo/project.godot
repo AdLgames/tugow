@@ -1,0 +1,9 @@
+config_version=5
+
+[application]
+config/name="Modal demo"
+run/main_scene="res://drop_test.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+
+[audio]
+driver/enable_input=false

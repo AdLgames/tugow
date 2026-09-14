@@ -40,3 +40,16 @@ void bank_process(Bank& bank, const float* x, float* out, int frames);
 bool bank_is_finite(const Bank& bank);
 
 }  // namespace modal
+
+namespace modal {
+
+// The same arithmetic, four modes at a time. Identical output to
+// bank_process within float rounding, which the tests hold it to.
+void bank_process_simd(Bank& bank, const float* x, float* out, int frames);
+
+// How fast this bank's slowest mode decays, as a per-sample multiplier. The
+// voice pool uses it to know when a voice has gone quiet without measuring
+// its output.
+float bank_slowest_decay(const Bank& bank);
+
+}  // namespace modal

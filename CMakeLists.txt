@@ -14,6 +14,8 @@ add_library(modal_core
   core/src/json.cpp
   core/src/model.cpp
   core/src/bank.cpp
+  core/src/queue.cpp
+  core/src/voice.cpp
   core/src/excitation.cpp)
 target_include_directories(modal_core PUBLIC core/include PRIVATE core/src)
 target_compile_options(modal_core PRIVATE
@@ -41,7 +43,9 @@ if(MODAL_BUILD_TESTS)
     tests/test_model.cpp
     tests/test_bank.cpp
     tests/test_excitation.cpp
-    tests/test_fitter.cpp)
+    tests/test_fitter.cpp
+    tests/test_queue.cpp
+    tests/test_voice.cpp)
   target_link_libraries(modal_tests PRIVATE modal_core modal_fitter)
   target_include_directories(modal_tests PRIVATE tests)
   target_compile_options(modal_tests PRIVATE -O2 -Wall -Wextra)
