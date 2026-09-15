@@ -21,6 +21,19 @@ cmake --build build -j
 `--report` prints a model's modes instead of rendering. `--modes N` caps the
 mode count, which is how the level-of-detail tiers will be checked later.
 
+```bash
+./build/modal-gen --shape bar --material steel --length 0.3 --thickness 0.012 \
+    --strikes 5 --out models/generated/steel_bar.modal
+```
+
+`modal-gen` writes a model from a description rather than a recording. The
+frequencies are physics — a free-free bar's 1 : 2.757 : 5.404 is in every
+acoustics text — and the damping carries the constants measured off the three
+hand-authored models, so it extends this library rather than starting a
+second one. `generator/README.md` says which half is which, and what it
+cannot do. It does not replace the fitter: a generated model is an idealised
+object, a fitted one is *yours*.
+
 ## The week 1 gate
 
 > Render the same model at 0.5, 2.0 and 8.0 m/s. The three must sound like
@@ -197,7 +210,9 @@ fitter/    modal-fit: WAV in, .modal out              not MIT, see fitter/LICENS
   fft      a radix-2 transform, in place of pffft
   fitter   STFT, peak picking, tracking, decay fitting, verification
 harness/   modal-render: model in, WAV out            MIT
+generator/ modal-gen: shape + material in, model out  MIT
 models/    three hand-authored models                 MIT
+  generated/  eleven from modal-gen                   CC0
 gui/       Modal Fit — the fitting-tool panel, Godot  MIT
 tests/     doctest — 47 cases, 4520 assertions        MIT
 ```

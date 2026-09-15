@@ -34,6 +34,22 @@ add_executable(modal-render harness/src/main.cpp)
 target_link_libraries(modal-render PRIVATE modal_core)
 target_compile_options(modal-render PRIVATE -O2 -Wall -Wextra)
 
+# The generator is MIT with the runtime rather than commercial with the
+# fitter: §11 wants a CC0 starter library, and a library nobody can regenerate
+# is a library that rots. It produces idealised objects, not anyone's mug —
+# which is exactly why it does not compete with the thing that carries a price.
+add_library(modal_generator
+  generator/src/materials.cpp
+  generator/src/shapes.cpp
+  generator/src/generate.cpp)
+target_include_directories(modal_generator PUBLIC generator/src)
+target_link_libraries(modal_generator PUBLIC modal_core)
+target_compile_options(modal_generator PRIVATE -O2 -Wall -Wextra)
+
+add_executable(modal-gen generator/src/main.cpp)
+target_link_libraries(modal-gen PRIVATE modal_generator)
+target_compile_options(modal-gen PRIVATE -O2 -Wall -Wextra)
+
 if(MODAL_BUILD_TESTS)
   enable_testing()
   add_executable(modal_tests
@@ -41,8 +57,9 @@ if(MODAL_BUILD_TESTS)
     tests/test_model.cpp
     tests/test_bank.cpp
     tests/test_excitation.cpp
-    tests/test_fitter.cpp)
-  target_link_libraries(modal_tests PRIVATE modal_core modal_fitter)
+    tests/test_fitter.cpp
+    tests/test_generator.cpp)
+  target_link_libraries(modal_tests PRIVATE modal_core modal_fitter modal_generator)
   target_include_directories(modal_tests PRIVATE tests)
   target_compile_options(modal_tests PRIVATE -O2 -Wall -Wextra)
   add_test(NAME modal_tests COMMAND modal_tests)
